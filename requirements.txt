@@ -1,0 +1,9 @@
+mysql-connector-python
+pymysql
+requests
+beautifulsoup4
+lxml
+html5lib
+schedule
+pytz
+thefuzz
