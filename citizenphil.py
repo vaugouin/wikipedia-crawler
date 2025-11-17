@@ -639,6 +639,20 @@ def f_tmdbpersonsetcreditscompleted(lngpersonid):
         cursor2.execute(strsqlupdate)
         connectioncp.commit()
 
+def f_tmdbpersonsetwikidatacompleted(lngpersonid):
+    global paris_tz
+    global connectioncp
+    
+    if lngpersonid > 0:
+        cursor2 = connectioncp.cursor()
+        strsqltablename = "T_WC_TMDB_PERSON"
+        strsqlupdatecondition = f"ID_PERSON = {lngpersonid}"
+        strtimwikidatacompleted = datetime.now(paris_tz).strftime("%Y-%m-%d %H:%M:%S")
+        strsqlupdatesetclause = f"TIM_WIKIDATA_COMPLETED = '{strtimwikidatacompleted}'"
+        strsqlupdate = f"UPDATE {strsqltablename} SET {strsqlupdatesetclause} WHERE {strsqlupdatecondition};"
+        cursor2.execute(strsqlupdate)
+        connectioncp.commit()
+
 def f_tmdbpersonimagestosql(lngpersonid):
     f_tmdbcontentimagesstosql(lngpersonid, "person", "T_WC_TMDB_PERSON", "T_WC_TMDB_PERSON_IMAGE", "ID_PERSON")
     
