@@ -1,6 +1,7 @@
 import requests
 import json
 import os
+from dotenv import load_dotenv
 import time
 import pymysql.cursors
 import citizenphil as cp
@@ -8,7 +9,11 @@ from datetime import datetime
 from bs4 import BeautifulSoup, NavigableString, Tag
 #import re
 
-strwikipediauseragent = "MovieMatchBot/1.0 (https://www.vaugouin.com/moviematch-en/; philippe@vaugouin.com)"
+# Load .env file 
+load_dotenv()
+
+strwikipediauseragent = os.getenv("WIKIMEDIA_USER_AGENT")
+print("strwikipediauseragent",strwikipediauseragent)
 headers = {
     'User-Agent': strwikipediauseragent
 }
