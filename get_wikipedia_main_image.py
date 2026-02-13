@@ -225,6 +225,30 @@ def _extract_commons_filename_from_url(image_url: str) -> str:
     return urllib.parse.unquote(filename)
 
 
+def _derive_thumb_url_from_original(image_url: str, width: int) -> str:
+    parsed = urllib.parse.urlparse(image_url)
+    path = parsed.path
+    # Expected:
+    #   /wikipedia/commons/a/ab/Filename.jpg
+    # Thumb:
+    #   /wikipedia/commons/thumb/a/ab/Filename.jpg/<width>px-Filename.jpg
+    m = re.match(r"^(?P<prefix>/wikipedia/commons)/(?P<a>[^/]+)/(?P<ab>[^/]+)/(?P<name>[^/]+)$", path)
+    if not m:
+        return image_url
+
+    prefix = m.group("prefix")
+    a = m.group("a")
+    ab = m.group("ab")
+    name = m.group("name")
+
+    thumb_path = f"{prefix}/thumb/{a}/{ab}/{name}/{width}px-{name}"
+    return urllib.parse.urlunparse((parsed.scheme, parsed.netloc, thumb_path, "", "", ""))
+
+
+def _get_filename_from_url(url: str) -> str:
+    return os.path.basename(urllib.parse.urlparse(url).path)
+
+
 def _get_image_caption_from_api(filename: str, api_base: str, lang: str) -> str:
     url = f"{api_base}/w/api.php"
     params = {
@@ -296,6 +320,7 @@ def get_thumbnail_url_for_width(image_url: str, target_width: int) -> tuple[str,
     resp = requests.get(url, params=params, headers=headers, timeout=30)
     if resp.status_code != 200:
         return (image_url, None, None)
+
     data = resp.json()
 
     pages = (data.get("query") or {}).get("pages") or {}
@@ -307,7 +332,7 @@ def get_thumbnail_url_for_width(image_url: str, target_width: int) -> tuple[str,
         thumb_url = info0.get("thumburl")
         thumb_w = info0.get("thumbwidth")
         thumb_h = info0.get("thumbheight")
-        if isinstance(thumb_url, str):
+        if isinstance(thumb_url, str) and thumb_url:
             return (
                 thumb_url,
                 thumb_w if isinstance(thumb_w, int) else None,
@@ -317,28 +342,155 @@ def get_thumbnail_url_for_width(image_url: str, target_width: int) -> tuple[str,
     return (image_url, None, None)
 
 
+def get_original_image_info(image_url: str) -> tuple[int | None, int | None, str | None]:
+    filename = _extract_commons_filename_from_url(image_url)
+    url = "https://commons.wikimedia.org/w/api.php"
+    params = {
+        "action": "query",
+        "format": "json",
+        "titles": f"File:{filename}",
+        "prop": "imageinfo",
+        "iiprop": "url|size",
+    }
+    headers = {"User-Agent": _get_user_agent()}
+    resp = requests.get(url, params=params, headers=headers, timeout=30)
+    if resp.status_code != 200:
+        return (None, None, None)
+    data = resp.json()
+
+    pages = (data.get("query") or {}).get("pages") or {}
+    for _page_id, page in pages.items():
+        imageinfo = (page or {}).get("imageinfo") or []
+        if not imageinfo:
+            continue
+        info0 = imageinfo[0] or {}
+        w = info0.get("width")
+        h = info0.get("height")
+        u = info0.get("url")
+        return (
+            w if isinstance(w, int) else None,
+            h if isinstance(h, int) else None,
+            u if isinstance(u, str) else None,
+        )
+    return (None, None, None)
+
+
+def get_thumbnail_gallery(image_url: str) -> list[dict]:
+    orig_w, orig_h, orig_url = get_original_image_info(image_url)
+
+    # Wikimedia thumbnails aren't a finite fixed set; in practice you can request many widths.
+    # We generate a reasonable gallery of widths: a dense range for small sizes plus some key widths.
+    max_w = orig_w if isinstance(orig_w, int) else 2048
+    max_w = min(max_w, 2048)
+
+    widths = list(range(50, min(max_w, 600) + 1, 50))
+    widths += [64, 100, 120, 150, 185, 200, 250, 300, 342, 400, 500, 640, 800, 1024, 1280, 1600, 1920]
+    widths = [w for w in widths if w <= max_w]
+
+    # Ensure uniqueness and stable ordering
+    seen = set()
+    widths = [w for w in widths if not (w in seen or seen.add(w))]
+
+    items: list[dict] = []
+    for w in widths:
+        thumb_url, tw, th = get_thumbnail_url_for_width(image_url, w)
+        if not isinstance(thumb_url, str) or not thumb_url:
+            continue
+        items.append(
+            {
+                "kind": "thumb",
+                "requested_width": w,
+                "url": thumb_url,
+                "width": tw,
+                "height": th,
+            }
+        )
+
+    if isinstance(orig_url, str) and orig_url:
+        items.append(
+            {
+                "kind": "original",
+                "requested_width": orig_w,
+                "url": orig_url,
+                "width": orig_w,
+                "height": orig_h,
+            }
+        )
+
+    return items
+
+
 def display_image_with_caption(
     image_url: str,
     caption: str,
-    thumbnails: list[tuple[int, int, str, int | None, int | None]],
+    gallery: list[dict],
     main_display_url: str,
 ) -> None:
     safe_caption = (caption or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
     safe_image_url = (image_url or "").replace("&", "%26")
     safe_main_url = (main_display_url or "").replace("&", "%26")
 
-    thumbs_html = ""
-    for target_w, target_h, thumb_url, actual_w, actual_h in thumbnails:
-        safe_thumb_url = (thumb_url or "").replace("&", "%26")
+    # Explain the Wikimedia thumb URL rule (when original URL follows upload.wikimedia.org layout).
+    rule_html = "<div style='margin-top: 20px;'>"
+    rule_html += "<div style='font-size: 16px; font-weight: 600; margin-bottom: 10px;'>Thumbnail URL rule</div>"
+    rule_html += "<div style='font-size: 13px; line-height: 1.35; color: #333;'>"
+    rule_html += "For files hosted on upload.wikimedia.org under <code>/wikipedia/commons/&lt;a&gt;/&lt;ab&gt;/&lt;filename&gt;</code>, "
+    rule_html += "a common thumbnail URL form is:<br/>"
+    rule_html += "<code>/wikipedia/commons/thumb/&lt;a&gt;/&lt;ab&gt;/&lt;filename&gt;/&lt;width&gt;px-&lt;filename&gt;</code>" 
+    rule_html += "</div>"
+    rule_html += "<div style='font-size: 12px; color: #666; margin-top: 6px;'>Note: some formats (SVG, TIFF) and some images may involve slightly different thumbnail filenames. The API output below is authoritative.</div>"
+    rule_html += "</div>"
+
+    thumbs_html = "<div style='margin-top: 20px;'>"
+    thumbs_html += "<div style='font-size: 16px; font-weight: 600; margin-bottom: 10px;'>Available sizes</div>"
+    thumbs_html += "<div style='display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 14px;'>"
+
+    for item in gallery:
+        url = item.get("url")
+        w = item.get("width")
+        h = item.get("height")
+        kind = item.get("kind")
+        requested_w = item.get("requested_width")
+
+        if not isinstance(url, str) or not url:
+            continue
+        safe_url = url.replace("&", "%26")
         size_text = ""
-        if isinstance(actual_w, int) and isinstance(actual_h, int):
-            size_text = f"{actual_w}x{actual_h}"
+        if isinstance(w, int) and isinstance(h, int):
+            size_text = f"{w}x{h}px"
+
+        label = "Original" if kind == "original" else "Thumbnail"
+        requested_text = ""
+        if isinstance(requested_w, int):
+            requested_text = f"requested {requested_w}px"
+
+        # Also show a derived URL based on the common thumb path rule, when applicable.
+        derived_url = ""
+        derived_filename = ""
+        if kind == "thumb" and isinstance(requested_w, int):
+            derived_url = _derive_thumb_url_from_original(image_url, requested_w)
+            derived_filename = _get_filename_from_url(derived_url)
+
+        derived_html = ""
+        if derived_filename and derived_url:
+            derived_html = (
+                f"<div style='margin-top: 4px; font-size: 12px; line-height: 1.25; color: #444; word-break: break-all;'>"
+                f"Derived URL: <code>{derived_url}</code></div>"
+                f"<div style='margin-top: 4px; font-size: 12px; line-height: 1.25; color: #444; word-break: break-all;'>"
+                f"Derived URL filename: <code>{derived_filename}</code></div>"
+            )
         thumbs_html += (
-            "<div style='margin-top: 16px;'>"
-            f"<div style='font-size: 14px; margin-bottom: 6px;'>Requested {target_w}x{target_h}  Actual {size_text}</div>"
-            f"<img src='{safe_thumb_url}' style='max-width: 100%; height: auto; display: block; border: 1px solid #ddd;'/>"
+            "<div style='border: 1px solid #e5e5e5; padding: 10px; border-radius: 8px;'>"
+            f"<a href='{safe_url}' target='_blank' rel='noreferrer' style='text-decoration: none; color: inherit;'>"
+            f"<img src='{safe_url}' style='max-width: 100%; height: auto; display: block; margin: 0 auto 8px auto;'/>"
+            f"<div style='font-size: 13px; line-height: 1.2;'>{label} | {requested_text} | {size_text}</div>"
+            f"<div style='margin-top: 6px; font-size: 12px; line-height: 1.25; color: #444; word-break: break-all;'>API URL filename: <code>{_get_filename_from_url(url)}</code></div>"
+            f"{derived_html}"
+            "</a>"
             "</div>"
         )
+
+    thumbs_html += "</div></div>"
 
     html = (
         "<!doctype html>\n"
@@ -347,6 +499,7 @@ def display_image_with_caption(
         f"<a href='{safe_image_url}' target='_blank' rel='noreferrer'>"
         f"<img src='{safe_main_url}' style='max-width: 100%; height: auto; display: block;'/></a>\n"
         f"<div style='margin-top: 12px; font-size: 16px; line-height: 1.4;'>{safe_caption}</div>\n"
+        f"{rule_html}\n"
         f"{thumbs_html}\n"
         "</body></html>\n"
     )
@@ -368,14 +521,11 @@ def main() -> None:
     print(image_url)
     print(caption)
 
-    thumbnails: list[tuple[int, int, str, int | None, int | None]] = []
-    for w, h in [(185, 245), (342, 454)]:
-        thumb_url, tw, th = get_thumbnail_url_for_width(image_url, w)
-        thumbnails.append((w, h, thumb_url, tw, th))
-        print(f"{tw}x{th}: {thumb_url}")
-
     main_thumb_url, _, _ = get_thumbnail_url_for_width(image_url, 342)
-    display_image_with_caption(image_url, caption, thumbnails, main_thumb_url)
+    if not main_thumb_url or main_thumb_url == image_url:
+        main_thumb_url = image_url
+    gallery = get_thumbnail_gallery(image_url)
+    display_image_with_caption(image_url, caption, gallery, main_thumb_url)
 
 
 if __name__ == "__main__":
