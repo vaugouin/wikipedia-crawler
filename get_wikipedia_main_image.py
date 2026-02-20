@@ -15,6 +15,11 @@ strlang = "fr"
 
 
 def _get_user_agent() -> str:
+    """Return the User-Agent string used for Wikimedia API requests.
+
+    Prefers the ``WIKIMEDIA_USER_AGENT`` environment variable when set, otherwise
+    falls back to a static default.
+    """
     ua = os.getenv("WIKIMEDIA_USER_AGENT")
     if ua:
         return ua
@@ -22,6 +27,11 @@ def _get_user_agent() -> str:
 
 
 def get_wikipedia_title_from_wikidata_id(wikidata_id: str, lang: str) -> str:
+    """Resolve a Wikidata entity id (e.g. ``Q8740``) to a Wikipedia page title.
+
+    Uses the Wikidata Action API and returns the sitelink title for the specified
+    Wikipedia language edition.
+    """
     url = "https://www.wikidata.org/w/api.php"
     params = {
         "action": "wbgetentities",
@@ -54,6 +64,11 @@ def get_wikipedia_title_from_wikidata_id(wikidata_id: str, lang: str) -> str:
 
 
 def get_wikipedia_main_image_url(title: str, lang: str) -> str:
+    """Return the main image URL for a Wikipedia page.
+
+    Uses the Wikipedia REST API summary endpoint and prefers ``originalimage`` when
+    available, otherwise falls back to ``thumbnail``.
+    """
     encoded = urllib.parse.quote(title.replace(" ", "_"), safe="")
     url = f"https://{lang}.wikipedia.org/api/rest_v1/page/summary/{encoded}"
     headers = {"User-Agent": _get_user_agent()}
@@ -74,6 +89,11 @@ def get_wikipedia_main_image_url(title: str, lang: str) -> str:
 
 
 def _get_wikipedia_page_media_items(title: str, lang: str) -> list[dict]:
+    """Fetch media items for a page using the Wikipedia REST API.
+
+    Returns the ``items`` list from ``/api/rest_v1/page/media/{title}`` or an empty
+    list if the endpoint is unavailable.
+    """
     encoded = urllib.parse.quote(title.replace(" ", "_"), safe="")
     url = f"https://{lang}.wikipedia.org/api/rest_v1/page/media/{encoded}"
     headers = {"User-Agent": _get_user_agent()}
@@ -88,6 +108,11 @@ def _get_wikipedia_page_media_items(title: str, lang: str) -> list[dict]:
 
 
 def _caption_from_wikipedia_page_media(title: str, lang: str, image_url: str) -> str:
+    """Try to get a localized caption for the lead image from the REST media endpoint.
+
+    Matches the page media image entry to ``image_url`` (by URL or filename) and
+    extracts the caption text/html if present.
+    """
     filename = _extract_commons_filename_from_url(image_url)
     items = _get_wikipedia_page_media_items(title, lang)
 
@@ -124,6 +149,11 @@ def _caption_from_wikipedia_page_media(title: str, lang: str, image_url: str) ->
 
 
 def _caption_from_wikipedia_parsed_html(title: str, lang: str, image_url: str) -> str:
+    """Extract a caption for the lead image by parsing rendered page HTML.
+
+    Uses the Action API ``parse`` HTML output and attempts common frwiki structures
+    (figure/figcaption, infobox, thumbcaption, infobox legend).
+    """
     filename = _extract_commons_filename_from_url(image_url)
 
     url = f"https://{lang}.wikipedia.org/w/api.php"
@@ -197,6 +227,7 @@ def _caption_from_wikipedia_parsed_html(title: str, lang: str, image_url: str) -
 
 
 def _strip_html(html_text: str) -> str:
+    """Remove HTML tags and unescape entities, returning plain text."""
     if not html_text:
         return ""
     text = re.sub(r"<[^>]+>", "", html_text)
@@ -204,6 +235,11 @@ def _strip_html(html_text: str) -> str:
 
 
 def _extract_lang_text_from_html(html_text: str, lang: str) -> str:
+    """Extract language-specific text from an HTML snippet.
+
+    Searches for elements with ``lang=<lang>`` and returns their combined text.
+    Returns an empty string when no matching language nodes are found.
+    """
     if not html_text or not lang:
         return ""
     # Try to extract text from elements explicitly tagged with the requested language.
@@ -220,12 +256,18 @@ def _extract_lang_text_from_html(html_text: str, lang: str) -> str:
 
 
 def _extract_commons_filename_from_url(image_url: str) -> str:
+    """Extract and URL-decode the filename from a Wikimedia upload URL."""
     path = urllib.parse.urlparse(image_url).path
     filename = os.path.basename(path)
     return urllib.parse.unquote(filename)
 
 
 def _derive_thumb_url_from_original(image_url: str, width: int) -> str:
+    """Derive a thumbnail URL using the common upload.wikimedia.org thumb path rule.
+
+    If ``image_url`` does not match the expected Commons upload path layout, returns
+    ``image_url`` unchanged.
+    """
     parsed = urllib.parse.urlparse(image_url)
     path = parsed.path
     # Expected:
@@ -246,10 +288,16 @@ def _derive_thumb_url_from_original(image_url: str, width: int) -> str:
 
 
 def _get_filename_from_url(url: str) -> str:
+    """Return the last path component (filename) for a URL."""
     return os.path.basename(urllib.parse.urlparse(url).path)
 
 
 def _get_image_caption_from_api(filename: str, api_base: str, lang: str) -> str:
+    """Fetch a file description/caption from a MediaWiki API endpoint.
+
+    Queries ``imageinfo.extmetadata`` for ``ImageDescription`` / ``ObjectName``.
+    Attempts to extract ``lang``-tagged fragments when present.
+    """
     url = f"{api_base}/w/api.php"
     params = {
         "action": "query",
@@ -285,6 +333,11 @@ def _get_image_caption_from_api(filename: str, api_base: str, lang: str) -> str:
 
 
 def get_main_image_caption(image_url: str, lang: str) -> str:
+    """Get an image caption for a Wikimedia-hosted image.
+
+    Prefers Commons file metadata first, then falls back to the specified language
+    Wikipedia file page metadata.
+    """
     filename = _extract_commons_filename_from_url(image_url)
     caption = _get_image_caption_from_api(filename, "https://commons.wikimedia.org", lang)
     if caption:
@@ -293,6 +346,11 @@ def get_main_image_caption(image_url: str, lang: str) -> str:
 
 
 def get_main_image_caption_for_page(title: str, image_url: str, lang: str) -> str:
+    """Get the best available caption for a page's lead image in ``lang``.
+
+    Tries the REST media endpoint, then HTML parsing of the page, then file metadata
+    (Commons / local wiki) as a final fallback.
+    """
     # Prefer the page-provided caption (localized to the wiki language) when present.
     caption = _caption_from_wikipedia_page_media(title, lang, image_url)
     if caption:
@@ -306,6 +364,26 @@ def get_main_image_caption_for_page(title: str, image_url: str, lang: str) -> st
 
 
 def get_thumbnail_url_for_width(image_url: str, target_width: int) -> tuple[str, int | None, int | None]:
+    """Return a Wikimedia thumbnail URL for the given image and target width.
+
+    This function queries the MediaWiki Action API on Wikimedia Commons for a thumbnail
+    rendition of the file referenced by ``image_url``.
+
+    Inputs:
+    - ``image_url``: The original upload.wikimedia.org URL of the image.
+    - ``target_width``: Desired thumbnail width in pixels (MediaWiki will preserve aspect ratio).
+
+    Returns a tuple ``(thumb_url, thumb_width, thumb_height)``:
+    - ``thumb_url``: The thumbnail URL if available; otherwise the original ``image_url``.
+    - ``thumb_width`` / ``thumb_height``: The actual thumbnail dimensions returned by the API,
+      or ``None`` if unavailable.
+
+    Notes:
+    - The API is authoritative: thumbnails can differ from the common URL pattern for some
+      formats (e.g. SVG/TIFF may render to PNG).
+    - If the request fails or the API response is missing thumbnail data, the function
+      falls back to returning ``(image_url, None, None)``.
+    """
     filename = _extract_commons_filename_from_url(image_url)
     url = "https://commons.wikimedia.org/w/api.php"
     params = {
@@ -343,6 +421,10 @@ def get_thumbnail_url_for_width(image_url: str, target_width: int) -> tuple[str,
 
 
 def get_original_image_info(image_url: str) -> tuple[int | None, int | None, str | None]:
+    """Return original image dimensions and canonical URL from Wikimedia Commons.
+
+    Returns ``(width, height, url)`` or ``(None, None, None)`` on failure.
+    """
     filename = _extract_commons_filename_from_url(image_url)
     url = "https://commons.wikimedia.org/w/api.php"
     params = {
@@ -376,6 +458,12 @@ def get_original_image_info(image_url: str) -> tuple[int | None, int | None, str
 
 
 def get_thumbnail_gallery(image_url: str) -> list[dict]:
+    """Build a gallery of thumbnail candidates for an image.
+
+    Since Wikimedia thumbnails can be requested at many widths, this returns a
+    practical set of requested widths (small dense set + common widths), plus the
+    original image entry.
+    """
     orig_w, orig_h, orig_url = get_original_image_info(image_url)
 
     # Wikimedia thumbnails aren't a finite fixed set; in practice you can request many widths.
@@ -426,6 +514,10 @@ def display_image_with_caption(
     gallery: list[dict],
     main_display_url: str,
 ) -> None:
+    """Create and open a temporary HTML page showing the image, caption, and gallery.
+
+    The HTML references Wikimedia URLs directly (no image downloading).
+    """
     safe_caption = (caption or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
     safe_image_url = (image_url or "").replace("&", "%26")
     safe_main_url = (main_display_url or "").replace("&", "%26")
@@ -515,18 +607,20 @@ def display_image_with_caption(
 
 
 def main() -> None:
+    """Script entry point for manual testing."""
     title = get_wikipedia_title_from_wikidata_id(strwikidataid, strlang)
     image_url = get_wikipedia_main_image_url(title, strlang)
     caption = get_main_image_caption_for_page(title, image_url, strlang)
+    print(title)
     print(image_url)
     print(caption)
-
-    main_thumb_url, _, _ = get_thumbnail_url_for_width(image_url, 342)
-    if not main_thumb_url or main_thumb_url == image_url:
-        main_thumb_url = image_url
-    gallery = get_thumbnail_gallery(image_url)
-    display_image_with_caption(image_url, caption, gallery, main_thumb_url)
-
+    
+    if 0:
+        main_thumb_url, _, _ = get_thumbnail_url_for_width(image_url, 342)
+        if not main_thumb_url or main_thumb_url == image_url:
+            main_thumb_url = image_url
+        gallery = get_thumbnail_gallery(image_url)
+        display_image_with_caption(image_url, caption, gallery, main_thumb_url)
 
 if __name__ == "__main__":
     main()
