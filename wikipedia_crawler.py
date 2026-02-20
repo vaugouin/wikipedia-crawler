@@ -7,6 +7,7 @@ import pymysql.cursors
 import citizenphil as cp
 from datetime import datetime
 from bs4 import BeautifulSoup, NavigableString, Tag
+import wikipedia_images as wimg
 #import re
 
 # Load .env file 
@@ -196,6 +197,8 @@ try:
                     #strsql += "ORDER BY POPULARITY DESC "
                     strsql += "ORDER BY ID_MOVIE ASC "
                     #strsql += "LIMIT 10 "
+                    strimagetable = "T_WC_WIKIDATA_MOVIE"
+                    strimagecolumn = "WIKIPEDIA_POSTER_PATH"
                 elif intindex == 202:
                     # Processing persons
                     strsql = ""
@@ -208,6 +211,8 @@ try:
                     #strsql += "ORDER BY POPULARITY DESC "
                     strsql += "ORDER BY ID_PERSON ASC "
                     #strsql += "LIMIT 10 "
+                    strimagetable = "T_WC_WIKIDATA_PERSON"
+                    strimagecolumn = "WIKIPEDIA_PROFILE_PATH"
                 elif intindex == 203:
                     # Processing items
                     strsql = ""
@@ -219,6 +224,8 @@ try:
                         strsql += "AND ID_WIKIDATA >= '" + stritemidold + "' "
                     strsql += "ORDER BY ID_WIKIDATA ASC "
                     #strsql += "LIMIT 10 "
+                    strimagetable = "T_WC_WIKIDATA_ITEM"
+                    strimagecolumn = "WIKIPEDIA_IMAGE_PATH"
                 elif intindex == 204:
                     # Processing series
                     strsql = ""
@@ -230,12 +237,16 @@ try:
                     #strsql += "ORDER BY POPULARITY DESC "
                     strsql += "ORDER BY ID_SERIE ASC "
                     #strsql += "LIMIT 100 "
+                    strimagetable = "T_WC_WIKIDATA_SERIE"
+                    strimagecolumn = "WIKIPEDIA_POSTER_PATH"
                 elif intindex == 209:
                     # Processing other
                     strsql = ""
                     strsql += "SELECT DISTINCT 0 AS id, 'Q1204187' AS ID_WIKIDATA FROM DUAL "
                     #strsql += "UNION ALL "
                     #strsql += "SELECT 1, 'Q1204187' "
+                    strimagetable = ""
+                    strimagecolumn = ""
                 if strsql != "":
                     print(strcurrentprocess)
                     cp.f_setservervariable("strwikipediacrawlercurrentprocess",strcurrentprocess,"Current process in the Wikipedia crawler",0)
@@ -269,7 +280,21 @@ try:
                                             if strkey in page_content['entities'][wikidata_id][strprops]:
                                                 page_title = page_content['entities'][wikidata_id][strprops][strkey]['title']
                                                 print(f"{strlanguage}: {page_title}")
+                                                #print("Now retrieving the image for this content")
                                                 if page_title:
+                                                    if strimagetable != "" and strimagecolumn != "":
+                                                        try:
+                                                            strmainimageurl = wimg.get_wikipedia_main_image_url(page_title, strlanguage)
+                                                            if strmainimageurl:
+                                                                print("Found an image:", strmainimageurl)
+                                                                arrcouples = {}
+                                                                arrcouples[strimagecolumn] = strmainimageurl
+                                                                strsqlupdatecondition = f"ID_WIKIDATA = '{wikidata_id}'"
+                                                                cp.f_sqlupdatearray(strimagetable, arrcouples, strsqlupdatecondition, 1)
+                                                            #else:
+                                                            #    print("No image found")
+                                                        except Exception as err:
+                                                            print(f"Main image retrieval error for {wikidata_id} ({strlanguage}): {err}")
                                                     url = f'https://{strlanguage}.wikipedia.org/w/api.php'
                                                     params = {
                                                         'action': 'parse',
@@ -280,7 +305,7 @@ try:
                                                     }
                                                     # By default we assume no success
                                                     intsuccess = False
-                                                    print(url)
+                                                    #print(url)
                                                     try:
                                                         response = requests.get(url, params=params, headers=headers)
                                                         intsuccess = True
@@ -348,7 +373,7 @@ try:
                                                                 
                                                                 # Extract Format data from movie, fr, Fiche Technique section
                                                                 if intindex == 201:
-                                                                    # This is a movie
+                                                                    # This is a movie, so we have extra processing because the French Wikipedia page holds technical data about the movie
                                                                     if strlanguage == "fr":
                                                                         # In French
                                                                         if strsectiontitle == "Fiche technique":

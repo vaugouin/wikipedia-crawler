@@ -8,11 +8,9 @@ from html import unescape
 import requests
 from bs4 import BeautifulSoup
 
-
 strwikidataid = "Q8740"
 strwikidataid = "Q24815"
 strlang = "fr"
-
 
 def _get_user_agent() -> str:
     """Return the User-Agent string used for Wikimedia API requests.
@@ -24,7 +22,6 @@ def _get_user_agent() -> str:
     if ua:
         return ua
     return "wikipedia-crawler/1.0 (https://github.com/; contact: unknown)"
-
 
 def get_wikipedia_title_from_wikidata_id(wikidata_id: str, lang: str) -> str:
     """Resolve a Wikidata entity id (e.g. ``Q8740``) to a Wikipedia page title.
@@ -62,7 +59,6 @@ def get_wikipedia_title_from_wikidata_id(wikidata_id: str, lang: str) -> str:
 
     return title
 
-
 def get_wikipedia_main_image_url(title: str, lang: str) -> str:
     """Return the main image URL for a Wikipedia page.
 
@@ -87,7 +83,6 @@ def get_wikipedia_main_image_url(title: str, lang: str) -> str:
 
     raise RuntimeError(f"No main image found in summary for '{title}' ({lang})")
 
-
 def _get_wikipedia_page_media_items(title: str, lang: str) -> list[dict]:
     """Fetch media items for a page using the Wikipedia REST API.
 
@@ -105,7 +100,6 @@ def _get_wikipedia_page_media_items(title: str, lang: str) -> list[dict]:
     if isinstance(items, list):
         return items
     return []
-
 
 def _caption_from_wikipedia_page_media(title: str, lang: str, image_url: str) -> str:
     """Try to get a localized caption for the lead image from the REST media endpoint.
@@ -146,7 +140,6 @@ def _caption_from_wikipedia_page_media(title: str, lang: str, image_url: str) ->
             return text.strip()
 
     return ""
-
 
 def _caption_from_wikipedia_parsed_html(title: str, lang: str, image_url: str) -> str:
     """Extract a caption for the lead image by parsing rendered page HTML.
@@ -225,14 +218,12 @@ def _caption_from_wikipedia_parsed_html(title: str, lang: str, image_url: str) -
 
     return ""
 
-
 def _strip_html(html_text: str) -> str:
     """Remove HTML tags and unescape entities, returning plain text."""
     if not html_text:
         return ""
     text = re.sub(r"<[^>]+>", "", html_text)
     return unescape(text).strip()
-
 
 def _extract_lang_text_from_html(html_text: str, lang: str) -> str:
     """Extract language-specific text from an HTML snippet.
@@ -254,13 +245,11 @@ def _extract_lang_text_from_html(html_text: str, lang: str) -> str:
     combined = "\n".join(_strip_html(m) for m in matches)
     return combined.strip()
 
-
 def _extract_commons_filename_from_url(image_url: str) -> str:
     """Extract and URL-decode the filename from a Wikimedia upload URL."""
     path = urllib.parse.urlparse(image_url).path
     filename = os.path.basename(path)
     return urllib.parse.unquote(filename)
-
 
 def _derive_thumb_url_from_original(image_url: str, width: int) -> str:
     """Derive a thumbnail URL using the common upload.wikimedia.org thumb path rule.
@@ -286,11 +275,9 @@ def _derive_thumb_url_from_original(image_url: str, width: int) -> str:
     thumb_path = f"{prefix}/thumb/{a}/{ab}/{name}/{width}px-{name}"
     return urllib.parse.urlunparse((parsed.scheme, parsed.netloc, thumb_path, "", "", ""))
 
-
 def _get_filename_from_url(url: str) -> str:
     """Return the last path component (filename) for a URL."""
     return os.path.basename(urllib.parse.urlparse(url).path)
-
 
 def _get_image_caption_from_api(filename: str, api_base: str, lang: str) -> str:
     """Fetch a file description/caption from a MediaWiki API endpoint.
@@ -331,7 +318,6 @@ def _get_image_caption_from_api(filename: str, api_base: str, lang: str) -> str:
 
     return ""
 
-
 def get_main_image_caption(image_url: str, lang: str) -> str:
     """Get an image caption for a Wikimedia-hosted image.
 
@@ -343,7 +329,6 @@ def get_main_image_caption(image_url: str, lang: str) -> str:
     if caption:
         return caption
     return _get_image_caption_from_api(filename, f"https://{lang}.wikipedia.org", lang)
-
 
 def get_main_image_caption_for_page(title: str, image_url: str, lang: str) -> str:
     """Get the best available caption for a page's lead image in ``lang``.
@@ -361,7 +346,6 @@ def get_main_image_caption_for_page(title: str, image_url: str, lang: str) -> st
         return caption
 
     return get_main_image_caption(image_url, lang)
-
 
 def get_thumbnail_url_for_width(image_url: str, target_width: int) -> tuple[str, int | None, int | None]:
     """Return a Wikimedia thumbnail URL for the given image and target width.
@@ -419,7 +403,6 @@ def get_thumbnail_url_for_width(image_url: str, target_width: int) -> tuple[str,
 
     return (image_url, None, None)
 
-
 def get_original_image_info(image_url: str) -> tuple[int | None, int | None, str | None]:
     """Return original image dimensions and canonical URL from Wikimedia Commons.
 
@@ -455,7 +438,6 @@ def get_original_image_info(image_url: str) -> tuple[int | None, int | None, str
             u if isinstance(u, str) else None,
         )
     return (None, None, None)
-
 
 def get_thumbnail_gallery(image_url: str) -> list[dict]:
     """Build a gallery of thumbnail candidates for an image.
@@ -506,7 +488,6 @@ def get_thumbnail_gallery(image_url: str) -> list[dict]:
         )
 
     return items
-
 
 def display_image_with_caption(
     image_url: str,
@@ -604,7 +585,6 @@ def display_image_with_caption(
         os.startfile(html_path)  # Windows: open with default browser
     except Exception:
         webbrowser.open(f"file:///{html_path}")
-
 
 def main() -> None:
     """Script entry point for manual testing."""

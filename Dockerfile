@@ -6,4 +6,4 @@ COPY requirements.txt .
 RUN pip install --upgrade pip && pip install -r requirements.txt
 # Add end
 # COPY . /app/
-CMD ["python", "wikipedia-crawler.py"]
+CMD ["python", "wikipedia_crawler.py"]
