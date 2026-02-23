@@ -189,6 +189,7 @@ try:
                     strsql = ""
                     strsql += "SELECT DISTINCT T_WC_TMDB_MOVIE.ID_MOVIE AS id, ID_WIKIDATA FROM T_WC_TMDB_MOVIE "
                     strsql += "WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> '' "
+                    strsql += "AND ID_WIKIDATA REGEXP '^Q[0-9]+$' "
                     #strsql += "AND ID_WIKIDATA = 'Q103474' "
                     #strsql += "AND ID_MOVIE >= 1440000 "
                     if strmovieidold != "":
@@ -204,6 +205,7 @@ try:
                     strsql = ""
                     strsql += "SELECT DISTINCT T_WC_TMDB_PERSON.ID_PERSON AS id, ID_WIKIDATA FROM T_WC_TMDB_PERSON "
                     strsql += "WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> '' "
+                    strsql += "AND ID_WIKIDATA REGEXP '^Q[0-9]+$' "
                     #strsql += "AND ID_PERSON >= 1225829 "
                     if strpersonidold != "":
                         strsql += "AND ID_PERSON >= " + strpersonidold + " "
@@ -218,6 +220,7 @@ try:
                     strsql = ""
                     strsql += "SELECT DISTINCT T_WC_WIKIDATA_ITEM.ID_WIKIDATA AS id, ID_WIKIDATA FROM T_WC_WIKIDATA_ITEM "
                     strsql += "WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> '' "
+                    strsql += "AND ID_WIKIDATA REGEXP '^Q[0-9]+$' "
                     strsql += "AND ID_WIKIDATA NOT IN (SELECT ID_WIKIDATA FROM T_WC_WIKIDATA_MOVIE) "
                     strsql += "AND ID_WIKIDATA NOT IN (SELECT ID_WIKIDATA FROM T_WC_WIKIDATA_PERSON) "
                     if stritemidold != "":
@@ -231,6 +234,7 @@ try:
                     strsql = ""
                     strsql += "SELECT DISTINCT T_WC_TMDB_SERIE.ID_SERIE AS id, ID_WIKIDATA FROM T_WC_TMDB_SERIE "
                     strsql += "WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> '' "
+                    strsql += "AND ID_WIKIDATA REGEXP '^Q[0-9]+$' "
                     if strserieidold != "":
                         strsql += "AND ID_SERIE >= " + strserieidold + " "
                     #strsql += "AND TIM_WIKIPEDIA_COMPLETED IS NULL "
