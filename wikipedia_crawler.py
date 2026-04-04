@@ -142,12 +142,13 @@ strprocessesexecuted = ""
 cp.f_setservervariable("strwikipediacrawlerprocessesexecuted",strprocessesexecuted,strprocessesexecuteddesc,0)
 
 # Connect to the database
-connection = pymysql.connect(host=cp.strdbhost, user=cp.strdbuser, password=cp.strdbpassword, database=cp.strdbname, cursorclass=pymysql.cursors.DictCursor)
+#connection = pymysql.connect(host=cp.strdbhost, user=cp.strdbuser, password=cp.strdbpassword, database=cp.strdbname, cursorclass=pymysql.cursors.DictCursor)
 
 try:
-    with connection:
-        with connection.cursor() as cursor:
-            cursor2 = cp.connectioncp.cursor()
+    conn = cp.f_getconnection()
+    with conn:
+        with conn.cursor() as cursor:
+            cursor2 = conn.cursor()
             # Start timing the script execution
             start_time = time.time()
             strcurrentprocessdesc = "Current process in the Wikipedia crawler for Wikipedia pages retrieval"
@@ -156,7 +157,7 @@ try:
             strtotalruntimedesc = "Total runtime of the Wikipedia crawler"
             strtotalruntimeprevious = cp.f_getservervariable("strwikipediacrawlertotalruntime",0)
             cp.f_setservervariable("strwikipediacrawlertotalruntimeprevious",strtotalruntimeprevious,strtotalruntimedesc + " (previous execution)",0)
-            strtotalruntime = ""
+            strtotalruntime = "RUNNING"
             cp.f_setservervariable("strwikipediacrawlertotalruntime",strtotalruntime,strtotalruntimedesc,0)
 
             arrprocessscope = {201: 'movie', 202: 'person', 203: 'item', 204: 'serie', 209: 'other'}
@@ -198,7 +199,7 @@ try:
                     #strsql += "ORDER BY POPULARITY DESC "
                     strsql += "ORDER BY ID_MOVIE ASC "
                     #strsql += "LIMIT 10 "
-                    strimagetable = "T_WC_WIKIDATA_MOVIE"
+                    strimagetable = "T_WC_WIKIDATA_MOVIE_V1"
                     strimagecolumn = "WIKIPEDIA_POSTER_PATH"
                 elif intindex == 202:
                     # Processing persons
@@ -213,21 +214,21 @@ try:
                     #strsql += "ORDER BY POPULARITY DESC "
                     strsql += "ORDER BY ID_PERSON ASC "
                     #strsql += "LIMIT 10 "
-                    strimagetable = "T_WC_WIKIDATA_PERSON"
+                    strimagetable = "T_WC_WIKIDATA_PERSON_V1"
                     strimagecolumn = "WIKIPEDIA_PROFILE_PATH"
                 elif intindex == 203:
                     # Processing items
                     strsql = ""
-                    strsql += "SELECT DISTINCT T_WC_WIKIDATA_ITEM.ID_WIKIDATA AS id, ID_WIKIDATA FROM T_WC_WIKIDATA_ITEM "
+                    strsql += "SELECT DISTINCT T_WC_WIKIDATA_ITEM_V1.ID_WIKIDATA AS id, ID_WIKIDATA FROM T_WC_WIKIDATA_ITEM_V1 "
                     strsql += "WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> '' "
                     strsql += "AND ID_WIKIDATA REGEXP '^Q[0-9]+$' "
-                    strsql += "AND ID_WIKIDATA NOT IN (SELECT ID_WIKIDATA FROM T_WC_WIKIDATA_MOVIE) "
-                    strsql += "AND ID_WIKIDATA NOT IN (SELECT ID_WIKIDATA FROM T_WC_WIKIDATA_PERSON) "
+                    strsql += "AND ID_WIKIDATA NOT IN (SELECT ID_WIKIDATA FROM T_WC_WIKIDATA_MOVIE_V1) "
+                    strsql += "AND ID_WIKIDATA NOT IN (SELECT ID_WIKIDATA FROM T_WC_WIKIDATA_PERSON_V1) "
                     if stritemidold != "":
                         strsql += "AND ID_WIKIDATA >= '" + stritemidold + "' "
                     strsql += "ORDER BY ID_WIKIDATA ASC "
                     #strsql += "LIMIT 10 "
-                    strimagetable = "T_WC_WIKIDATA_ITEM"
+                    strimagetable = "T_WC_WIKIDATA_ITEM_V1"
                     strimagecolumn = "WIKIPEDIA_IMAGE_PATH"
                 elif intindex == 204:
                     # Processing series
@@ -241,7 +242,7 @@ try:
                     #strsql += "ORDER BY POPULARITY DESC "
                     strsql += "ORDER BY ID_SERIE ASC "
                     #strsql += "LIMIT 100 "
-                    strimagetable = "T_WC_WIKIDATA_SERIE"
+                    strimagetable = "T_WC_WIKIDATA_SERIE_V1"
                     strimagecolumn = "WIKIPEDIA_POSTER_PATH"
                 elif intindex == 209:
                     # Processing other
@@ -442,4 +443,6 @@ try:
     print("Process completed")
 except pymysql.MySQLError as e:
     print(f"❌ MySQL Error: {e}")
-    connection.rollback()
+    conn = getattr(cp, "connectioncp", None)
+    if conn is not None and getattr(conn, "open", False):
+        conn.rollback()

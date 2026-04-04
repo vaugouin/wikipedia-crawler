@@ -1,2 +1,2 @@
-mv wikipedia-crawler-old.sh wikipedia-crawler.sh 
+mv wikipedia-crawler-off.sh wikipedia-crawler.sh 
 
