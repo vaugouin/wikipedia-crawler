@@ -6,8 +6,8 @@ import time
 import pymysql.cursors
 import citizenphil as cp
 from datetime import datetime
-from bs4 import BeautifulSoup, NavigableString, Tag
 import wikipedia_images as wimg
+from wikipedia_crawler_helpers import extract_titles_and_text, get_linked_pages
 #import re
 
 # Load .env file 
@@ -19,115 +19,247 @@ headers = {
     'User-Agent': strwikipediauseragent
 }
 
-def get_linked_pages(wikidata_id, strprops, strlanguage):
-    url = f"https://www.wikidata.org/w/api.php"
-    if strprops == '':
-        params = {
-            'action': 'wbgetentities',
-            'format': 'json',
-            'ids': wikidata_id,
-            'languages': strlanguage
-        }
-    else:
-        params = {
-            'action': 'wbgetentities',
-            'format': 'json',
-            'ids': wikidata_id,
-            'props': strprops,
-            'languages': strlanguage
-        }
-    time.sleep(0.1)
-    response = requests.get(url, params=params, headers=headers)
-    print(response)
-    if response.status_code == 200:
-        data = response.json()
-        return data
-        # entities = data.get('entities', {})
-        # sitelinks = entities.get(wikidata_id, {}).get('sitelinks', {})
-        # linked_pages = {site: sitelinks[site]['title'] for site in sitelinks}
-        # return linked_pages
-    else:
-        return f"Error: {response.status_code}"
-
-def extract_titles_and_text(html_content):
-    # V4
-    soup = BeautifulSoup(html_content, 'html.parser')
-    # Find all h2 headers
-    headers = soup.find_all('h2')
-    # Initialize result array
-    result = []
-    # Extract text before the first h2 header
-    first_h2 = headers[0] if headers else None
-    # Find the first h2 and extract all text before it
-    section_text = ""
-    for sibling in soup.body.find_all(recursive=True):
-        if sibling == first_h2:
-            break
-        elif sibling.name == "h2":
-            break
-        elif sibling.name == 'p':
-            text = sibling.get_text()
-            if text:
-                section_text += '\n' + text + " "
-        elif sibling.name == 'h3' or sibling.name == 'h4':
-            text = sibling.get_text()
-            if text:
-                section_text += '\n' + text + " "
-        elif sibling.name == 'ul':
-            for li in sibling.find_all('li', recursive=True):
-                section_text += '\n- ' + ' '.join(t.strip() for t in li.strings if t.strip())
-        elif sibling.name == 'ol':
-            for li in sibling.find_all('li', recursive=True):
-                section_text += '\n- ' + ' '.join(t.strip() for t in li.strings if t.strip())
-        elif sibling.name == 'ul' and 'gallery' in sibling.get('class', []):
-            caption = sibling.find('li', class_='gallerycaption')
-            if caption:
-                section_text += '\n' + caption.get_text() + " "
-            for gallery_text in sibling.find_all('div', class_='gallerytext'):
-                text = gallery_text.get_text()
-                if text:
-                    section_text += '\n' + text
-    section_text = section_text.strip()
-    while "\n\n" in section_text:
-        section_text = section_text.replace("\n\n", "\n")
-    result.append(('Intro',section_text))
-    
-    # Extract text for each h2 section
-    for h2 in headers:
-        title = h2.get_text()
-        section_text = ""
-        for sibling in h2.find_all_next():
-            if sibling.name == "h2":
-                break
-            elif sibling.name == 'p':
-                text = sibling.get_text()
-                if text:
-                    section_text += '\n' + sibling.get_text() + " "
-            elif sibling.name == 'h3' or sibling.name == 'h4':
-                text = sibling.get_text()
-                if text:
-                    section_text += '\n' + text + " "
-            elif sibling.name == 'ul':
-                for li in sibling.find_all('li', recursive=True):
-                    section_text += '\n- ' + ' '.join(t.strip() for t in li.strings if t.strip())
-            elif sibling.name == 'ol':
-                for li in sibling.find_all('li', recursive=True):
-                    section_text += '\n- ' + ' '.join(t.strip() for t in li.strings if t.strip())
-            elif sibling.name == 'ul' and 'gallery' in sibling.get('class', []):
-                caption = sibling.find('li', class_='gallerycaption')
-                if caption:
-                    section_text += '\n' + caption.get_text() + " "
-                for gallery_text in sibling.find_all('div', class_='gallerytext'):
-                    text = gallery_text.get_text()
-                    if text:
-                        section_text += '\n' + text
-        section_text = section_text.strip()
-        while "\n\n" in section_text:
-            section_text = section_text.replace("\n\n", "\n")
-        result.append((title, section_text))
-    return result
-
 cwd = os.getcwd()
+
+def append_exclusion_tables(strsql, arrtables):
+    for strtable in arrtables:
+        strsql += "AND ID_WIKIDATA NOT IN (SELECT ID_WIKIDATA FROM " + strtable + ") "
+    return strsql
+
+def append_exclusion_queries(strsql, arrqueries):
+    for strquery in arrqueries:
+        strsql += "AND ID_WIKIDATA NOT IN (" + strquery + ") "
+    return strsql
+
+def build_movie_sql(strresumeid):
+    strsql = ""
+    strsql += "SELECT DISTINCT T_WC_TMDB_MOVIE.ID_MOVIE AS id, ID_WIKIDATA FROM T_WC_TMDB_MOVIE "
+    strsql += "WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> '' "
+    strsql += "AND ID_WIKIDATA REGEXP '^Q[0-9]+$' "
+    if strresumeid != "":
+        strsql += "AND ID_MOVIE >= " + strresumeid + " "
+    strsql += "ORDER BY ID_MOVIE ASC "
+    return strsql
+
+def build_person_sql(strresumeid):
+    strsql = ""
+    strsql += "SELECT DISTINCT T_WC_TMDB_PERSON.ID_PERSON AS id, ID_WIKIDATA FROM T_WC_TMDB_PERSON "
+    strsql += "WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> '' "
+    strsql += "AND ID_WIKIDATA REGEXP '^Q[0-9]+$' "
+    if strresumeid != "":
+        strsql += "AND ID_PERSON >= " + strresumeid + " "
+    strsql += "ORDER BY ID_PERSON ASC "
+    return strsql
+
+def build_item_sql(strresumeid):
+    strsql = ""
+    strsql += "SELECT DISTINCT T_WC_WIKIDATA_ITEM_V1.ID_WIKIDATA AS id, ID_WIKIDATA FROM T_WC_WIKIDATA_ITEM_V1 "
+    strsql += "WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> '' "
+    strsql += "AND ID_WIKIDATA REGEXP '^Q[0-9]+$' "
+    strsql = append_exclusion_tables(strsql, [
+        "T_WC_WIKIDATA_MOVIE_V1",
+        "T_WC_WIKIDATA_PERSON_V1",
+    ])
+    if strresumeid != "":
+        strsql += "AND ID_WIKIDATA >= '" + strresumeid + "' "
+    strsql += "ORDER BY ID_WIKIDATA ASC "
+    return strsql
+
+def build_serie_sql(strresumeid):
+    strsql = ""
+    strsql += "SELECT DISTINCT T_WC_TMDB_SERIE.ID_SERIE AS id, ID_WIKIDATA FROM T_WC_TMDB_SERIE "
+    strsql += "WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> '' "
+    strsql += "AND ID_WIKIDATA REGEXP '^Q[0-9]+$' "
+    strsql = append_exclusion_tables(strsql, [
+        "T_WC_WIKIDATA_MOVIE_V1",
+        "T_WC_WIKIDATA_PERSON_V1",
+        "T_WC_WIKIDATA_ITEM_V1",
+    ])
+    if strresumeid != "":
+        strsql += "AND ID_SERIE >= " + strresumeid + " "
+    strsql += "ORDER BY ID_SERIE ASC "
+    return strsql
+
+def build_other_sql(strresumeid):
+    strsql = ""
+    strsql += "SELECT DISTINCT 'Q1204187' AS id, 'Q1204187' AS ID_WIKIDATA FROM DUAL "
+    strsql += "WHERE 'Q1204187' NOT IN (SELECT ID_WIKIDATA FROM T_WC_WIKIDATA_MOVIE_V1) "
+    strsql += "AND 'Q1204187' NOT IN (SELECT ID_WIKIDATA FROM T_WC_WIKIDATA_PERSON_V1) "
+    strsql += "AND 'Q1204187' NOT IN (SELECT ID_WIKIDATA FROM T_WC_WIKIDATA_ITEM_V1) "
+    strsql += "AND 'Q1204187' NOT IN (SELECT ID_WIKIDATA FROM T_WC_WIKIDATA_SERIE_V1) "
+    return strsql
+
+def build_list_sql(strresumeid):
+    strsql = ""
+    strsql += "SELECT DISTINCT ID_WIKIDATA AS id, ID_WIKIDATA FROM T_WC_T2S_LIST "
+    strsql += "WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> '' "
+    strsql = append_exclusion_tables(strsql, [
+        "T_WC_WIKIDATA_MOVIE_V1",
+        "T_WC_WIKIDATA_PERSON_V1",
+        "T_WC_WIKIDATA_ITEM_V1",
+        "T_WC_WIKIDATA_SERIE_V1",
+    ])
+    strsql = append_exclusion_queries(strsql, [
+        "SELECT 'Q1204187' AS ID_WIKIDATA FROM DUAL",
+    ])
+    if strresumeid != "":
+        strsql += "AND ID_WIKIDATA >= '" + strresumeid + "' "
+    strsql += "ORDER BY ID_WIKIDATA ASC "
+    return strsql
+
+def build_movement_sql(strresumeid):
+    strsql = ""
+    strsql += "SELECT DISTINCT ID_WIKIDATA AS id, ID_WIKIDATA FROM T_WC_T2S_MOVEMENT "
+    strsql += "WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> '' "
+    strsql = append_exclusion_tables(strsql, [
+        "T_WC_WIKIDATA_MOVIE_V1",
+        "T_WC_WIKIDATA_PERSON_V1",
+        "T_WC_WIKIDATA_ITEM_V1",
+        "T_WC_WIKIDATA_SERIE_V1",
+    ])
+    strsql = append_exclusion_queries(strsql, [
+        "SELECT 'Q1204187' AS ID_WIKIDATA FROM DUAL",
+        "SELECT DISTINCT ID_WIKIDATA FROM T_WC_T2S_LIST WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> ''",
+    ])
+    if strresumeid != "":
+        strsql += "AND ID_WIKIDATA >= '" + strresumeid + "' "
+    strsql += "ORDER BY ID_WIKIDATA ASC "
+    return strsql
+
+def build_collection_sql(strresumeid):
+    strsql = ""
+    strsql += "SELECT DISTINCT ID_WIKIDATA AS id, ID_WIKIDATA FROM T_WC_T2S_COLLECTION "
+    strsql += "WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> '' "
+    strsql = append_exclusion_tables(strsql, [
+        "T_WC_WIKIDATA_MOVIE_V1",
+        "T_WC_WIKIDATA_PERSON_V1",
+        "T_WC_WIKIDATA_ITEM_V1",
+        "T_WC_WIKIDATA_SERIE_V1",
+    ])
+    strsql = append_exclusion_queries(strsql, [
+        "SELECT 'Q1204187' AS ID_WIKIDATA FROM DUAL",
+        "SELECT DISTINCT ID_WIKIDATA FROM T_WC_T2S_LIST WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> ''",
+        "SELECT DISTINCT ID_WIKIDATA FROM T_WC_T2S_MOVEMENT WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> ''",
+    ])
+    if strresumeid != "":
+        strsql += "AND ID_WIKIDATA >= '" + strresumeid + "' "
+    strsql += "ORDER BY ID_WIKIDATA ASC "
+    return strsql
+
+def build_group_sql(strresumeid):
+    strsql = ""
+    strsql += "SELECT DISTINCT ID_WIKIDATA AS id, ID_WIKIDATA FROM T_WC_T2S_GROUP "
+    strsql += "WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> '' "
+    strsql = append_exclusion_tables(strsql, [
+        "T_WC_WIKIDATA_MOVIE_V1",
+        "T_WC_WIKIDATA_PERSON_V1",
+        "T_WC_WIKIDATA_ITEM_V1",
+        "T_WC_WIKIDATA_SERIE_V1",
+    ])
+    strsql = append_exclusion_queries(strsql, [
+        "SELECT 'Q1204187' AS ID_WIKIDATA FROM DUAL",
+        "SELECT DISTINCT ID_WIKIDATA FROM T_WC_T2S_LIST WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> ''",
+        "SELECT DISTINCT ID_WIKIDATA FROM T_WC_T2S_MOVEMENT WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> ''",
+        "SELECT DISTINCT ID_WIKIDATA FROM T_WC_T2S_COLLECTION WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> ''",
+    ])
+    if strresumeid != "":
+        strsql += "AND ID_WIKIDATA >= '" + strresumeid + "' "
+    strsql += "ORDER BY ID_WIKIDATA ASC "
+    return strsql
+
+def build_death_sql(strresumeid):
+    strsql = ""
+    strsql += "SELECT DISTINCT ID_WIKIDATA AS id, ID_WIKIDATA FROM T_WC_T2S_DEATH "
+    strsql += "WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> '' "
+    strsql = append_exclusion_tables(strsql, [
+        "T_WC_WIKIDATA_MOVIE_V1",
+        "T_WC_WIKIDATA_PERSON_V1",
+        "T_WC_WIKIDATA_ITEM_V1",
+        "T_WC_WIKIDATA_SERIE_V1",
+    ])
+    strsql = append_exclusion_queries(strsql, [
+        "SELECT 'Q1204187' AS ID_WIKIDATA FROM DUAL",
+        "SELECT DISTINCT ID_WIKIDATA FROM T_WC_T2S_LIST WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> ''",
+        "SELECT DISTINCT ID_WIKIDATA FROM T_WC_T2S_MOVEMENT WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> ''",
+        "SELECT DISTINCT ID_WIKIDATA FROM T_WC_T2S_COLLECTION WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> ''",
+        "SELECT DISTINCT ID_WIKIDATA FROM T_WC_T2S_GROUP WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> ''",
+    ])
+    if strresumeid != "":
+        strsql += "AND ID_WIKIDATA >= '" + strresumeid + "' "
+    strsql += "ORDER BY ID_WIKIDATA ASC "
+    return strsql
+
+def build_award_sql(strresumeid):
+    strsql = ""
+    strsql += "SELECT DISTINCT ID_WIKIDATA AS id, ID_WIKIDATA FROM T_WC_T2S_AWARD "
+    strsql += "WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> '' "
+    strsql = append_exclusion_tables(strsql, [
+        "T_WC_WIKIDATA_MOVIE_V1",
+        "T_WC_WIKIDATA_PERSON_V1",
+        "T_WC_WIKIDATA_ITEM_V1",
+        "T_WC_WIKIDATA_SERIE_V1",
+    ])
+    strsql = append_exclusion_queries(strsql, [
+        "SELECT 'Q1204187' AS ID_WIKIDATA FROM DUAL",
+        "SELECT DISTINCT ID_WIKIDATA FROM T_WC_T2S_LIST WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> ''",
+        "SELECT DISTINCT ID_WIKIDATA FROM T_WC_T2S_MOVEMENT WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> ''",
+        "SELECT DISTINCT ID_WIKIDATA FROM T_WC_T2S_COLLECTION WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> ''",
+        "SELECT DISTINCT ID_WIKIDATA FROM T_WC_T2S_GROUP WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> ''",
+        "SELECT DISTINCT ID_WIKIDATA FROM T_WC_T2S_DEATH WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> ''",
+    ])
+    if strresumeid != "":
+        strsql += "AND ID_WIKIDATA >= '" + strresumeid + "' "
+    strsql += "ORDER BY ID_WIKIDATA ASC "
+    return strsql
+
+def build_nomination_sql(strresumeid):
+    strsql = ""
+    strsql += "SELECT DISTINCT ID_WIKIDATA AS id, ID_WIKIDATA FROM T_WC_T2S_NOMINATION "
+    strsql += "WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> '' "
+    strsql = append_exclusion_tables(strsql, [
+        "T_WC_WIKIDATA_MOVIE_V1",
+        "T_WC_WIKIDATA_PERSON_V1",
+        "T_WC_WIKIDATA_ITEM_V1",
+        "T_WC_WIKIDATA_SERIE_V1",
+    ])
+    strsql = append_exclusion_queries(strsql, [
+        "SELECT 'Q1204187' AS ID_WIKIDATA FROM DUAL",
+        "SELECT DISTINCT ID_WIKIDATA FROM T_WC_T2S_LIST WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> ''",
+        "SELECT DISTINCT ID_WIKIDATA FROM T_WC_T2S_MOVEMENT WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> ''",
+        "SELECT DISTINCT ID_WIKIDATA FROM T_WC_T2S_COLLECTION WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> ''",
+        "SELECT DISTINCT ID_WIKIDATA FROM T_WC_T2S_GROUP WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> ''",
+        "SELECT DISTINCT ID_WIKIDATA FROM T_WC_T2S_DEATH WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> ''",
+        "SELECT DISTINCT ID_WIKIDATA FROM T_WC_T2S_AWARD WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> ''",
+    ])
+    if strresumeid != "":
+        strsql += "AND ID_WIKIDATA >= '" + strresumeid + "' "
+    strsql += "ORDER BY ID_WIKIDATA ASC "
+    return strsql
+
+def build_topic_sql(strresumeid):
+    strsql = ""
+    strsql += "SELECT DISTINCT ID_WIKIDATA AS id, ID_WIKIDATA FROM T_WC_T2S_TOPIC "
+    strsql += "WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> '' "
+    strsql = append_exclusion_tables(strsql, [
+        "T_WC_WIKIDATA_MOVIE_V1",
+        "T_WC_WIKIDATA_PERSON_V1",
+        "T_WC_WIKIDATA_ITEM_V1",
+        "T_WC_WIKIDATA_SERIE_V1",
+    ])
+    strsql = append_exclusion_queries(strsql, [
+        "SELECT 'Q1204187' AS ID_WIKIDATA FROM DUAL",
+        "SELECT DISTINCT ID_WIKIDATA FROM T_WC_T2S_LIST WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> ''",
+        "SELECT DISTINCT ID_WIKIDATA FROM T_WC_T2S_MOVEMENT WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> ''",
+        "SELECT DISTINCT ID_WIKIDATA FROM T_WC_T2S_COLLECTION WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> ''",
+        "SELECT DISTINCT ID_WIKIDATA FROM T_WC_T2S_GROUP WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> ''",
+        "SELECT DISTINCT ID_WIKIDATA FROM T_WC_T2S_DEATH WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> ''",
+        "SELECT DISTINCT ID_WIKIDATA FROM T_WC_T2S_AWARD WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> ''",
+        "SELECT DISTINCT ID_WIKIDATA FROM T_WC_T2S_NOMINATION WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> ''",
+    ])
+    if strresumeid != "":
+        strsql += "AND ID_WIKIDATA >= '" + strresumeid + "' "
+    strsql += "ORDER BY ID_WIKIDATA ASC "
+    return strsql
 
 # wikidata_id = "Q24829" # Wikidata ID for Orson Welles
 
@@ -159,99 +291,143 @@ try:
             cp.f_setservervariable("strwikipediacrawlertotalruntimeprevious",strtotalruntimeprevious,strtotalruntimedesc + " (previous execution)",0)
             strtotalruntime = "RUNNING"
             cp.f_setservervariable("strwikipediacrawlertotalruntime",strtotalruntime,strtotalruntimedesc,0)
-
-            arrprocessscope = {201: 'movie', 202: 'person', 203: 'item', 204: 'serie', 209: 'other'}
             
             strmovieidold = cp.f_getservervariable("strwikipediacrawlermovieid",0)
             strpersonidold = cp.f_getservervariable("strwikipediacrawlerpersonid",0)
             stritemidold = cp.f_getservervariable("strwikipediacrawleritemid",0)
+            strotheridold = cp.f_getservervariable("strwikipediacrawlerotherid",0)
             strserieidold = cp.f_getservervariable("strwikipediacrawlerserieid",0)
+            strlistidold = cp.f_getservervariable("strwikipediacrawlerlistid",0)
+            strmovementidold = cp.f_getservervariable("strwikipediacrawlermovementid",0)
+            strcollectionidold = cp.f_getservervariable("strwikipediacrawlercollectionid",0)
+            strgroupidold = cp.f_getservervariable("strwikipediacrawlergroupid",0)
+            strdeathidold = cp.f_getservervariable("strwikipediacrawlerdeathid",0)
+            strawardidold = cp.f_getservervariable("strwikipediacrawlerawardid",0)
+            strnominationidold = cp.f_getservervariable("strwikipediacrawlernominationid",0)
+            strtopicidold = cp.f_getservervariable("strwikipediacrawlertopicid",0)
             strcurrentcontent = cp.f_getservervariable("strwikipediacrawlercurrentcontent",0)
-            
-            if strcurrentcontent == "person":
-                arrprocessscope = {202: 'person', 203: 'item', 204: 'serie', 209: 'other'}
-            if strcurrentcontent == "item":
-                arrprocessscope = {203: 'item', 204: 'serie', 209: 'other'}
-            if strcurrentcontent == "serie":
-                arrprocessscope = {204: 'serie', 209: 'other'}
-            if strcurrentcontent == "other":
-                arrprocessscope = {209: 'other'}
-            #arrprocessscope = {201: 'movie'}
-            #arrprocessscope = {202: 'person'}
-            #arrprocessscope = {203: 'item'}
-            #arrprocessscope = {203: 'serie'}
-            #arrprocessscope = {209: 'other'}
-            for intindex, strcontent in arrprocessscope.items():
+            arrprocesses = [
+                {
+                    "id": 201,
+                    "content": "movie",
+                    "resumeid": strmovieidold,
+                    "sqlbuilder": build_movie_sql,
+                    "imagetable": "T_WC_WIKIDATA_MOVIE_V1",
+                    "imagecolumn": "WIKIPEDIA_POSTER_PATH",
+                },
+                {
+                    "id": 202,
+                    "content": "person",
+                    "resumeid": strpersonidold,
+                    "sqlbuilder": build_person_sql,
+                    "imagetable": "T_WC_WIKIDATA_PERSON_V1",
+                    "imagecolumn": "WIKIPEDIA_PROFILE_PATH",
+                },
+                {
+                    "id": 203,
+                    "content": "item",
+                    "resumeid": stritemidold,
+                    "sqlbuilder": build_item_sql,
+                    "imagetable": "T_WC_WIKIDATA_ITEM_V1",
+                    "imagecolumn": "WIKIPEDIA_IMAGE_PATH",
+                },
+                {
+                    "id": 204,
+                    "content": "serie",
+                    "resumeid": strserieidold,
+                    "sqlbuilder": build_serie_sql,
+                    "imagetable": "T_WC_WIKIDATA_SERIE_V1",
+                    "imagecolumn": "WIKIPEDIA_POSTER_PATH",
+                },
+                {
+                    "id": 209,
+                    "content": "other",
+                    "resumeid": strotheridold,
+                    "sqlbuilder": build_other_sql,
+                    "imagetable": "T_WC_WIKIDATA_ITEM_V1",
+                    "imagecolumn": "WIKIPEDIA_IMAGE_PATH",
+                },
+                {
+                    "id": 210,
+                    "content": "list",
+                    "resumeid": strlistidold,
+                    "sqlbuilder": build_list_sql,
+                    "imagetable": "T_WC_WIKIDATA_ITEM_V1",
+                    "imagecolumn": "WIKIPEDIA_IMAGE_PATH",
+                },
+                {
+                    "id": 211,
+                    "content": "movement",
+                    "resumeid": strmovementidold,
+                    "sqlbuilder": build_movement_sql,
+                    "imagetable": "T_WC_WIKIDATA_ITEM_V1",
+                    "imagecolumn": "WIKIPEDIA_IMAGE_PATH",
+                },
+                {
+                    "id": 212,
+                    "content": "collection",
+                    "resumeid": strcollectionidold,
+                    "sqlbuilder": build_collection_sql,
+                    "imagetable": "T_WC_WIKIDATA_ITEM_V1",
+                    "imagecolumn": "WIKIPEDIA_IMAGE_PATH",
+                },
+                {
+                    "id": 213,
+                    "content": "group",
+                    "resumeid": strgroupidold,
+                    "sqlbuilder": build_group_sql,
+                    "imagetable": "T_WC_WIKIDATA_ITEM_V1",
+                    "imagecolumn": "WIKIPEDIA_IMAGE_PATH",
+                },
+                {
+                    "id": 214,
+                    "content": "death",
+                    "resumeid": strdeathidold,
+                    "sqlbuilder": build_death_sql,
+                    "imagetable": "T_WC_WIKIDATA_ITEM_V1",
+                    "imagecolumn": "WIKIPEDIA_IMAGE_PATH",
+                },
+                {
+                    "id": 215,
+                    "content": "award",
+                    "resumeid": strawardidold,
+                    "sqlbuilder": build_award_sql,
+                    "imagetable": "T_WC_WIKIDATA_ITEM_V1",
+                    "imagecolumn": "WIKIPEDIA_IMAGE_PATH",
+                },
+                {
+                    "id": 216,
+                    "content": "nomination",
+                    "resumeid": strnominationidold,
+                    "sqlbuilder": build_nomination_sql,
+                    "imagetable": "T_WC_WIKIDATA_ITEM_V1",
+                    "imagecolumn": "WIKIPEDIA_IMAGE_PATH",
+                },
+                {
+                    "id": 217,
+                    "content": "topic",
+                    "resumeid": strtopicidold,
+                    "sqlbuilder": build_topic_sql,
+                    "imagetable": "T_WC_WIKIDATA_ITEM_V1",
+                    "imagecolumn": "WIKIPEDIA_IMAGE_PATH",
+                },
+            ]
+            resume_index = 0
+            if strcurrentcontent != "":
+                for index, processconfig in enumerate(arrprocesses):
+                    if processconfig["content"] == strcurrentcontent:
+                        resume_index = index
+                        break
+            arrprocessscope = arrprocesses[resume_index:]
+            for processconfig in arrprocessscope:
+                intindex = processconfig["id"]
+                strcontent = processconfig["content"]
+                strsql = processconfig["sqlbuilder"](processconfig["resumeid"])
+                strimagetable = processconfig["imagetable"]
+                strimagecolumn = processconfig["imagecolumn"]
                 strcurrentprocess = f"{intindex}: processing Wikipedia English and French " + strcontent + " content"
                 strprocessesexecuted += str(intindex) + ", "
                 cp.f_setservervariable("strwikipediacrawlerprocessesexecuted",strprocessesexecuted,strprocessesexecuteddesc,0)
-                if intindex == 201:
-                    # Processing movies
-                    strsql = ""
-                    strsql += "SELECT DISTINCT T_WC_TMDB_MOVIE.ID_MOVIE AS id, ID_WIKIDATA FROM T_WC_TMDB_MOVIE "
-                    strsql += "WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> '' "
-                    strsql += "AND ID_WIKIDATA REGEXP '^Q[0-9]+$' "
-                    #strsql += "AND ID_WIKIDATA = 'Q103474' "
-                    #strsql += "AND ID_MOVIE >= 1440000 "
-                    if strmovieidold != "":
-                        strsql += "AND ID_MOVIE >= " + strmovieidold + " "
-                    #strsql += "AND TIM_WIKIPEDIA_COMPLETED IS NULL "
-                    #strsql += "ORDER BY POPULARITY DESC "
-                    strsql += "ORDER BY ID_MOVIE ASC "
-                    #strsql += "LIMIT 10 "
-                    strimagetable = "T_WC_WIKIDATA_MOVIE_V1"
-                    strimagecolumn = "WIKIPEDIA_POSTER_PATH"
-                elif intindex == 202:
-                    # Processing persons
-                    strsql = ""
-                    strsql += "SELECT DISTINCT T_WC_TMDB_PERSON.ID_PERSON AS id, ID_WIKIDATA FROM T_WC_TMDB_PERSON "
-                    strsql += "WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> '' "
-                    strsql += "AND ID_WIKIDATA REGEXP '^Q[0-9]+$' "
-                    #strsql += "AND ID_PERSON >= 1225829 "
-                    if strpersonidold != "":
-                        strsql += "AND ID_PERSON >= " + strpersonidold + " "
-                    #strsql += "AND TIM_WIKIPEDIA_COMPLETED IS NULL "
-                    #strsql += "ORDER BY POPULARITY DESC "
-                    strsql += "ORDER BY ID_PERSON ASC "
-                    #strsql += "LIMIT 10 "
-                    strimagetable = "T_WC_WIKIDATA_PERSON_V1"
-                    strimagecolumn = "WIKIPEDIA_PROFILE_PATH"
-                elif intindex == 203:
-                    # Processing items
-                    strsql = ""
-                    strsql += "SELECT DISTINCT T_WC_WIKIDATA_ITEM_V1.ID_WIKIDATA AS id, ID_WIKIDATA FROM T_WC_WIKIDATA_ITEM_V1 "
-                    strsql += "WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> '' "
-                    strsql += "AND ID_WIKIDATA REGEXP '^Q[0-9]+$' "
-                    strsql += "AND ID_WIKIDATA NOT IN (SELECT ID_WIKIDATA FROM T_WC_WIKIDATA_MOVIE_V1) "
-                    strsql += "AND ID_WIKIDATA NOT IN (SELECT ID_WIKIDATA FROM T_WC_WIKIDATA_PERSON_V1) "
-                    if stritemidold != "":
-                        strsql += "AND ID_WIKIDATA >= '" + stritemidold + "' "
-                    strsql += "ORDER BY ID_WIKIDATA ASC "
-                    #strsql += "LIMIT 10 "
-                    strimagetable = "T_WC_WIKIDATA_ITEM_V1"
-                    strimagecolumn = "WIKIPEDIA_IMAGE_PATH"
-                elif intindex == 204:
-                    # Processing series
-                    strsql = ""
-                    strsql += "SELECT DISTINCT T_WC_TMDB_SERIE.ID_SERIE AS id, ID_WIKIDATA FROM T_WC_TMDB_SERIE "
-                    strsql += "WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> '' "
-                    strsql += "AND ID_WIKIDATA REGEXP '^Q[0-9]+$' "
-                    if strserieidold != "":
-                        strsql += "AND ID_SERIE >= " + strserieidold + " "
-                    #strsql += "AND TIM_WIKIPEDIA_COMPLETED IS NULL "
-                    #strsql += "ORDER BY POPULARITY DESC "
-                    strsql += "ORDER BY ID_SERIE ASC "
-                    #strsql += "LIMIT 100 "
-                    strimagetable = "T_WC_WIKIDATA_SERIE_V1"
-                    strimagecolumn = "WIKIPEDIA_POSTER_PATH"
-                elif intindex == 209:
-                    # Processing other
-                    strsql = ""
-                    strsql += "SELECT DISTINCT 0 AS id, 'Q1204187' AS ID_WIKIDATA FROM DUAL "
-                    #strsql += "UNION ALL "
-                    #strsql += "SELECT 1, 'Q1204187' "
-                    strimagetable = ""
-                    strimagecolumn = ""
                 if strsql != "":
                     print(strcurrentprocess)
                     cp.f_setservervariable("strwikipediacrawlercurrentprocess",strcurrentprocess,"Current process in the Wikipedia crawler",0)
@@ -419,16 +595,13 @@ try:
                     cp.f_setservervariable("strwikipediacrawler"+strcontent+"enddatetime",strnow,"Date and time of the last end of the Wikipedia crawler for "+strcontent,0)
                     cp.f_setservervariable("strwikipediacrawler"+strcontent+"id","","Current id in the Wikipedia crawler for "+strcontent,0)
                     # Define what is the next content to process
-                    if strcontent == "movie":
-                        cp.f_setservervariable("strwikipediacrawlercurrentcontent","person","Current content processed in the Wikipedia crawler",0)
-                    elif strcontent == "person":
-                        cp.f_setservervariable("strwikipediacrawlercurrentcontent","item","Current content processed in the Wikipedia crawler",0)
-                    elif strcontent == "item":
-                        cp.f_setservervariable("strwikipediacrawlercurrentcontent","serie","Current content processed in the Wikipedia crawler",0)
-                    elif strcontent == "serie":
-                        cp.f_setservervariable("strwikipediacrawlercurrentcontent","other","Current content processed in the Wikipedia crawler",0)
-                    elif strcontent == "other":
-                        cp.f_setservervariable("strwikipediacrawlercurrentcontent","","Current content processed in the Wikipedia crawler",0)
+                    strnextcontent = ""
+                    for index, nextprocessconfig in enumerate(arrprocesses):
+                        if nextprocessconfig["content"] == strcontent:
+                            if index + 1 < len(arrprocesses):
+                                strnextcontent = arrprocesses[index + 1]["content"]
+                            break
+                    cp.f_setservervariable("strwikipediacrawlercurrentcontent",strnextcontent,"Current content processed in the Wikipedia crawler",0)
             strcurrentprocess = ""
             cp.f_setservervariable("strwikipediacrawlercurrentprocess",strcurrentprocess,strcurrentprocessdesc,0)
             strnow = datetime.now(cp.paris_tz).strftime("%Y-%m-%d %H:%M:%S")
