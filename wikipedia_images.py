@@ -84,71 +84,92 @@ def get_wikipedia_main_image_url(title: str, lang: str) -> str:
     raise RuntimeError(f"No main image found in summary for '{title}' ({lang})")
 
 def _get_wikipedia_page_media_items(title: str, lang: str) -> list[dict]:
-    """Fetch media items for a page using the Wikipedia REST API.
+    """Fetch image items for a page via the MediaWiki Action API.
 
-    Returns the ``items`` list from ``/api/rest_v1/page/media/{title}`` or an empty
-    list if the endpoint is unavailable.
+    Replaces the retired REST v1 ``/page/media/{title}`` endpoint. Returns dicts
+    shaped like the former REST response (``type``, ``title``, ``original``,
+    ``thumbnail``, ``caption``) so downstream callers keep working. The Action
+    API does not supply per-page captions; ``caption`` is left empty and
+    captions are filled in by ``get_wikipedia_page_images`` via HTML scraping.
     """
-    encoded = urllib.parse.quote(title.replace(" ", "_"), safe="")
-    url = f"https://{lang}.wikipedia.org/api/rest_v1/page/media/{encoded}"
+    api_url = f"https://{lang}.wikipedia.org/w/api.php"
     headers = {"User-Agent": _get_user_agent()}
-    resp = requests.get(url, headers=headers, params={"redirect": "true"}, timeout=30)
-    if resp.status_code != 200:
+
+    # Step 1: enumerate every File: title embedded on the page (paginated).
+    file_titles: list[str] = []
+    params: dict = {
+        "action": "query",
+        "format": "json",
+        "titles": title,
+        "prop": "images",
+        "imlimit": "max",
+        "redirects": 1,
+    }
+    while True:
+        resp = requests.get(api_url, params=params, headers=headers, timeout=30)
+        if resp.status_code != 200:
+            print(f"page images HTTP {resp.status_code} for {title} ({lang})")
+            return []
+        data = resp.json()
+        pages = (data.get("query") or {}).get("pages") or {}
+        for _pid, page in pages.items():
+            for img in (page or {}).get("images") or []:
+                t = img.get("title")
+                if isinstance(t, str) and t:
+                    file_titles.append(t)
+        cont = data.get("continue")
+        if not cont:
+            break
+        params.update(cont)
+
+    if not file_titles:
         return []
-    data = resp.json()
-    items = data.get("items")
-    if isinstance(items, list):
-        return items
-    return []
 
-def _caption_from_wikipedia_page_media(title: str, lang: str, image_url: str) -> str:
-    """Try to get a localized caption for the lead image from the REST media endpoint.
-
-    Matches the page media image entry to ``image_url`` (by URL or filename) and
-    extracts the caption text/html if present.
-    """
-    filename = _extract_commons_filename_from_url(image_url)
-    items = _get_wikipedia_page_media_items(title, lang)
-
-    for item in items:
-        if not isinstance(item, dict) or item.get("type") != "image":
+    # Step 2: resolve URL, dimensions, and thumbnail for each File: in batches of 50.
+    items: list[dict] = []
+    for i in range(0, len(file_titles), 50):
+        batch = file_titles[i : i + 50]
+        info_params = {
+            "action": "query",
+            "format": "json",
+            "titles": "|".join(batch),
+            "prop": "imageinfo",
+            "iiprop": "url|size|mime",
+            "iiurlwidth": "320",
+        }
+        resp = requests.get(api_url, params=info_params, headers=headers, timeout=30)
+        if resp.status_code != 200:
+            print(f"imageinfo HTTP {resp.status_code} for {title} ({lang})")
             continue
+        data = resp.json()
+        pages_dict = (data.get("query") or {}).get("pages") or {}
+        for _pid, page in pages_dict.items():
+            page_title = page.get("title") or ""
+            info_list = page.get("imageinfo") or []
+            if not info_list:
+                continue
+            info0 = info_list[0] or {}
+            src = info0.get("url") or ""
+            if not src:
+                continue
+            mime = info0.get("mime") or ""
+            if mime and not mime.startswith("image/"):
+                continue
+            items.append({
+                "type": "image",
+                "title": page_title,
+                "original": {"source": src},
+                "thumbnail": {"source": info0.get("thumburl") or ""},
+                "caption": {},
+            })
 
-        # Try to match the lead image by URL or filename.
-        original = item.get("original") or {}
-        original_source = (original.get("source") or "")
-        item_title = (item.get("title") or "")
+    return items
 
-        matches = False
-        if original_source and original_source == image_url:
-            matches = True
-        elif filename and (filename in original_source or filename in item_title):
-            matches = True
+def _get_parsed_page_soup(title: str, lang: str):
+    """Fetch and parse the rendered HTML of a Wikipedia page.
 
-        if not matches:
-            continue
-
-        caption = item.get("caption") or {}
-        html = caption.get("html")
-        if isinstance(html, str):
-            cleaned = _strip_html(html)
-            if cleaned:
-                return cleaned
-
-        text = caption.get("text")
-        if isinstance(text, str) and text.strip():
-            return text.strip()
-
-    return ""
-
-def _caption_from_wikipedia_parsed_html(title: str, lang: str, image_url: str) -> str:
-    """Extract a caption for the lead image by parsing rendered page HTML.
-
-    Uses the Action API ``parse`` HTML output and attempts common frwiki structures
-    (figure/figcaption, infobox, thumbcaption, infobox legend).
+    Returns a ``BeautifulSoup`` document, or ``None`` on failure.
     """
-    filename = _extract_commons_filename_from_url(image_url)
-
     url = f"https://{lang}.wikipedia.org/w/api.php"
     params = {
         "action": "parse",
@@ -160,63 +181,129 @@ def _caption_from_wikipedia_parsed_html(title: str, lang: str, image_url: str) -
     headers = {"User-Agent": _get_user_agent()}
     resp = requests.get(url, params=params, headers=headers, timeout=30)
     if resp.status_code != 200:
-        return ""
+        print(f"parse HTML HTTP {resp.status_code} for {title} ({lang})")
+        return None
     data = resp.json()
     html = (((data.get("parse") or {}).get("text") or {}).get("*") or "")
     if not isinstance(html, str) or not html:
+        return None
+    return BeautifulSoup(html, "html.parser")
+
+
+def _caption_from_soup(soup, filename: str) -> str:
+    """Find a caption in already-parsed page HTML for the image matching ``filename``.
+
+    Tries figure/figcaption, infobox-caption, frwiki infobox legend, then thumbcaption.
+    """
+    if soup is None or not filename:
         return ""
 
-    soup = BeautifulSoup(html, "html.parser")
+    # MediaWiki normalizes spaces to underscores in image URLs.
+    filename_underscored = filename.replace(" ", "_")
 
-    # Try to locate a figure/infobox element that contains our target image.
+    def href_targets_image(href: str) -> bool:
+        if not href:
+            return False
+        try:
+            decoded = urllib.parse.unquote(href)
+        except Exception:
+            decoded = href
+        # mw-file-description hrefs look like "/wiki/File:Foo.jpg" or "/wiki/Fichier:Foo.jpg"
+        return (
+            decoded.endswith(":" + filename)
+            or decoded.endswith(":" + filename_underscored)
+        )
+
     def matches_img(tag) -> bool:
         if not tag or tag.name != "img":
             return False
+        # Prefer exact match via the parent <a class="mw-file-description"> href.
+        parent_a = tag.find_parent("a", class_=re.compile(r"\bmw-file-description\b"))
+        if parent_a is not None:
+            return href_targets_image(parent_a.get("href") or "")
+        # Fall back to src/alt substring for the rare img not wrapped in such an <a>.
         src = tag.get("src") or ""
         alt = tag.get("alt") or ""
-        if filename and (filename in src or filename in alt):
-            return True
-        return False
+        return (
+            filename in src
+            or filename in alt
+            or filename_underscored in src
+            or filename_underscored in alt
+        )
 
     img = soup.find(matches_img)
     if not img:
         return ""
 
-    # Common patterns: <figure>...<figcaption>...</figcaption></figure>
-    figure = img.find_parent("figure")
-    if figure:
-        figcaption = figure.find("figcaption")
-        if figcaption:
-            cleaned = figcaption.get_text(" ", strip=True)
-            if cleaned:
-                return cleaned
+    # Walk up from the img looking for a specific captioning marker. Each marker
+    # is treated as definitive: if its expected caption element is missing, we
+    # give up rather than falling back to a broader (and frequently wrong)
+    # ancestor caption. This prevents decorative icons sitting inside an infobox
+    # row from inheriting the lead image's caption.
+    node = img
+    while node is not None and node.name is not None:
+        classes = node.get("class") or []
 
-    # Infobox pattern: captions can be in elements with class 'infobox-caption'
-    infobox = img.find_parent(class_=re.compile(r"\binfobox\b"))
-    if infobox:
-        caption_el = infobox.find(class_=re.compile(r"\binfobox-caption\b"))
-        if caption_el:
-            cleaned = caption_el.get_text(" ", strip=True)
-            if cleaned:
-                return cleaned
+        if node.name == "figure":
+            figcaption = node.find("figcaption")
+            if figcaption:
+                cleaned = figcaption.get_text(" ", strip=True)
+                if cleaned:
+                    return cleaned
+            return ""
 
-        # frwiki infobox_v3 commonly uses a simple 'legend' div for the image caption.
-        legend_el = infobox.find(class_=re.compile(r"\blegend\b"))
-        if legend_el:
-            cleaned = legend_el.get_text(" ", strip=True)
-            if cleaned:
-                return cleaned
+        if "gallerybox" in classes:
+            caption_el = node.find(class_=re.compile(r"\bgallerytext\b"))
+            if caption_el:
+                cleaned = caption_el.get_text(" ", strip=True)
+                if cleaned:
+                    return cleaned
+            return ""
 
-    # Thumb pattern: <div class="thumbcaption">...</div>
-    thumb = img.find_parent(class_=re.compile(r"\bthumb\b"))
-    if thumb:
-        caption_el = thumb.find(class_=re.compile(r"\bthumbcaption\b"))
-        if caption_el:
-            cleaned = caption_el.get_text(" ", strip=True)
-            if cleaned:
-                return cleaned
+        if "thumb" in classes:
+            caption_el = node.find(class_=re.compile(r"\bthumbcaption\b"))
+            if caption_el:
+                cleaned = caption_el.get_text(" ", strip=True)
+                if cleaned:
+                    return cleaned
+            # No thumbcaption here — the img may still be inside a gallerybox
+            # one level up, so keep walking instead of returning.
+
+        if "infobox-image" in classes:
+            caption_el = node.find(class_=re.compile(r"\binfobox-caption\b"))
+            if caption_el:
+                cleaned = caption_el.get_text(" ", strip=True)
+                if cleaned:
+                    return cleaned
+            tr = node.find_parent("tr")
+            if tr is not None:
+                next_tr = tr.find_next_sibling("tr")
+                if next_tr is not None:
+                    caption_el = next_tr.find(class_=re.compile(r"\binfobox-caption\b"))
+                    if caption_el:
+                        cleaned = caption_el.get_text(" ", strip=True)
+                        if cleaned:
+                            return cleaned
+            return ""
+
+        if node.name == "div" and "images" in classes:
+            sib = node.find_next_sibling("div", class_=re.compile(r"\blegend\b"))
+            if sib is not None:
+                cleaned = sib.get_text(" ", strip=True)
+                if cleaned:
+                    return cleaned
+            return ""
+
+        node = node.parent
 
     return ""
+
+
+def _caption_from_wikipedia_parsed_html(title: str, lang: str, image_url: str) -> str:
+    """Extract a caption for an image by parsing rendered page HTML."""
+    filename = _extract_commons_filename_from_url(image_url)
+    soup = _get_parsed_page_soup(title, lang)
+    return _caption_from_soup(soup, filename)
 
 def _strip_html(html_text: str) -> str:
     """Remove HTML tags and unescape entities, returning plain text."""
@@ -333,19 +420,57 @@ def get_main_image_caption(image_url: str, lang: str) -> str:
 def get_main_image_caption_for_page(title: str, image_url: str, lang: str) -> str:
     """Get the best available caption for a page's lead image in ``lang``.
 
-    Tries the REST media endpoint, then HTML parsing of the page, then file metadata
-    (Commons / local wiki) as a final fallback.
+    Tries HTML parsing of the page first, then file metadata (Commons /
+    local wiki) as a fallback.
     """
-    # Prefer the page-provided caption (localized to the wiki language) when present.
-    caption = _caption_from_wikipedia_page_media(title, lang, image_url)
-    if caption:
-        return caption
-
     caption = _caption_from_wikipedia_parsed_html(title, lang, image_url)
     if caption:
         return caption
 
     return get_main_image_caption(image_url, lang)
+
+def get_wikipedia_page_images(title: str, lang: str) -> list[dict]:
+    """Return all image items available for a Wikipedia page.
+
+    Each returned dict is normalized for crawler/database usage and may include:
+    ``display_order``, ``image_url``, ``image_url_normalized``, ``thumbnail_url``,
+    ``media_type``, ``file_name``, ``commons_title``, and ``caption``.
+    """
+    arrimages = []
+    items = _get_wikipedia_page_media_items(title, lang)
+    soup = _get_parsed_page_soup(title, lang) if items else None
+
+    for item in items:
+        if not isinstance(item, dict) or item.get("type") != "image":
+            continue
+
+        original = item.get("original") or {}
+        thumbnail = item.get("thumbnail") or {}
+        image_url = original.get("source") or ""
+        if not image_url:
+            continue
+
+        commons_title = item.get("title") or ""
+        # The File namespace prefix is localized on non-English wikis
+        # (e.g. "Fichier:" on fr-wiki). Strip whatever sits before the first colon.
+        file_name = commons_title.split(":", 1)[1] if ":" in commons_title else commons_title
+        if file_name == "":
+            file_name = _extract_commons_filename_from_url(image_url)
+
+        caption = _caption_from_soup(soup, file_name) if soup is not None else ""
+
+        arrimages.append({
+            "display_order": len(arrimages) + 1,
+            "image_url": image_url,
+            "image_url_normalized": image_url,
+            "thumbnail_url": thumbnail.get("source") or "",
+            "media_type": item.get("type") or "image",
+            "file_name": file_name,
+            "commons_title": commons_title,
+            "caption": caption,
+        })
+
+    return arrimages
 
 def get_thumbnail_url_for_width(image_url: str, target_width: int) -> tuple[str, int | None, int | None]:
     """Return a Wikimedia thumbnail URL for the given image and target width.

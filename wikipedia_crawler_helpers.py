@@ -7,7 +7,10 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-strwikipediauseragent = os.getenv("WIKIMEDIA_USER_AGENT")
+strwikipediauseragent = (
+    os.getenv("WIKIMEDIA_USER_AGENT")
+    or "wikipedia-crawler/1.0 (https://github.com/; contact: unknown)"
+)
 headers = {
     'User-Agent': strwikipediauseragent
 }

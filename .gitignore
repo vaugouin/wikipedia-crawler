@@ -4,3 +4,5 @@ movie
 person
 serie
 .env
+__pycache__/
+.claude/
