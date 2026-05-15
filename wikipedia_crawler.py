@@ -1,6 +1,7 @@
 import requests
 import json
 import os
+import urllib.parse
 from dotenv import load_dotenv
 import time
 import pymysql.cursors
@@ -31,7 +32,13 @@ def append_exclusion_queries(strsql, arrqueries):
         strsql += "AND ID_WIKIDATA NOT IN (" + strquery + ") "
     return strsql
 
+def normalize_resumeid(strresumeid):
+    if strresumeid is None:
+        return ""
+    return str(strresumeid)
+
 def build_movie_sql(strresumeid):
+    strresumeid = normalize_resumeid(strresumeid)
     strsql = ""
     strsql += "SELECT DISTINCT T_WC_TMDB_MOVIE.ID_MOVIE AS id, ID_WIKIDATA FROM T_WC_TMDB_MOVIE "
     strsql += "WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> '' "
@@ -42,6 +49,7 @@ def build_movie_sql(strresumeid):
     return strsql
 
 def build_person_sql(strresumeid):
+    strresumeid = normalize_resumeid(strresumeid)
     strsql = ""
     strsql += "SELECT DISTINCT T_WC_TMDB_PERSON.ID_PERSON AS id, ID_WIKIDATA FROM T_WC_TMDB_PERSON "
     strsql += "WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> '' "
@@ -52,6 +60,7 @@ def build_person_sql(strresumeid):
     return strsql
 
 def build_item_sql(strresumeid):
+    strresumeid = normalize_resumeid(strresumeid)
     strsql = ""
     strsql += "SELECT DISTINCT T_WC_WIKIDATA_ITEM_V1.ID_WIKIDATA AS id, ID_WIKIDATA FROM T_WC_WIKIDATA_ITEM_V1 "
     strsql += "WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> '' "
@@ -65,7 +74,158 @@ def build_item_sql(strresumeid):
     strsql += "ORDER BY ID_WIKIDATA ASC "
     return strsql
 
+def build_character_sql(strresumeid):
+    strresumeid = normalize_resumeid(strresumeid)
+    strsql = ""
+    strsql += "SELECT DISTINCT T_WC_TMDB_CHARACTER.ID_CHARACTER AS id, ID_WIKIDATA FROM T_WC_TMDB_CHARACTER "
+    strsql += "WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> '' "
+    strsql += "AND ID_WIKIDATA REGEXP '^Q[0-9]+$' "
+    strsql = append_exclusion_tables(strsql, [
+        "T_WC_WIKIDATA_MOVIE_V1",
+        "T_WC_WIKIDATA_PERSON_V1",
+        "T_WC_WIKIDATA_ITEM_V1",
+        "T_WC_WIKIDATA_SERIE_V1",
+    ])
+    strsql = append_exclusion_queries(strsql, [
+        "SELECT 'Q1204187' AS ID_WIKIDATA FROM DUAL",
+        "SELECT DISTINCT ID_WIKIDATA FROM T_WC_T2S_LIST WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> ''",
+        "SELECT DISTINCT ID_WIKIDATA FROM T_WC_T2S_MOVEMENT WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> ''",
+        "SELECT DISTINCT ID_WIKIDATA FROM T_WC_T2S_COLLECTION WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> ''",
+        "SELECT DISTINCT ID_WIKIDATA FROM T_WC_T2S_GROUP WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> ''",
+        "SELECT DISTINCT ID_WIKIDATA FROM T_WC_T2S_DEATH WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> ''",
+        "SELECT DISTINCT ID_WIKIDATA FROM T_WC_T2S_AWARD WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> ''",
+        "SELECT DISTINCT ID_WIKIDATA FROM T_WC_T2S_NOMINATION WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> ''",
+        "SELECT DISTINCT ID_WIKIDATA FROM T_WC_T2S_TOPIC WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> ''",
+    ])
+    if strresumeid != "":
+        strsql += "AND ID_CHARACTER >= " + strresumeid + " "
+    strsql += "ORDER BY ID_CHARACTER ASC "
+    return strsql
+
+def build_tmdb_collection_sql(strresumeid):
+    strresumeid = normalize_resumeid(strresumeid)
+    strsql = ""
+    strsql += "SELECT DISTINCT T_WC_TMDB_COLLECTION.ID_COLLECTION AS id, ID_WIKIDATA FROM T_WC_TMDB_COLLECTION "
+    strsql += "WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> '' "
+    strsql += "AND ID_WIKIDATA REGEXP '^Q[0-9]+$' "
+    strsql = append_exclusion_tables(strsql, [
+        "T_WC_WIKIDATA_MOVIE_V1",
+        "T_WC_WIKIDATA_PERSON_V1",
+        "T_WC_WIKIDATA_ITEM_V1",
+        "T_WC_WIKIDATA_SERIE_V1",
+    ])
+    strsql = append_exclusion_queries(strsql, [
+        "SELECT 'Q1204187' AS ID_WIKIDATA FROM DUAL",
+        "SELECT DISTINCT ID_WIKIDATA FROM T_WC_T2S_LIST WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> ''",
+        "SELECT DISTINCT ID_WIKIDATA FROM T_WC_T2S_MOVEMENT WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> ''",
+        "SELECT DISTINCT ID_WIKIDATA FROM T_WC_T2S_COLLECTION WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> ''",
+        "SELECT DISTINCT ID_WIKIDATA FROM T_WC_T2S_GROUP WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> ''",
+        "SELECT DISTINCT ID_WIKIDATA FROM T_WC_T2S_DEATH WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> ''",
+        "SELECT DISTINCT ID_WIKIDATA FROM T_WC_T2S_AWARD WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> ''",
+        "SELECT DISTINCT ID_WIKIDATA FROM T_WC_T2S_NOMINATION WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> ''",
+        "SELECT DISTINCT ID_WIKIDATA FROM T_WC_T2S_TOPIC WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> ''",
+        "SELECT DISTINCT ID_WIKIDATA FROM T_WC_TMDB_CHARACTER WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> ''",
+    ])
+    if strresumeid != "":
+        strsql += "AND ID_COLLECTION >= " + strresumeid + " "
+    strsql += "ORDER BY ID_COLLECTION ASC "
+    return strsql
+
+def build_episode_sql(strresumeid):
+    strresumeid = normalize_resumeid(strresumeid)
+    strsql = ""
+    strsql += "SELECT DISTINCT T_WC_TMDB_EPISODE.ID_EPISODE AS id, ID_WIKIDATA FROM T_WC_TMDB_EPISODE "
+    strsql += "WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> '' "
+    strsql += "AND ID_WIKIDATA REGEXP '^Q[0-9]+$' "
+    strsql = append_exclusion_tables(strsql, [
+        "T_WC_WIKIDATA_MOVIE_V1",
+        "T_WC_WIKIDATA_PERSON_V1",
+        "T_WC_WIKIDATA_ITEM_V1",
+        "T_WC_WIKIDATA_SERIE_V1",
+    ])
+    strsql = append_exclusion_queries(strsql, [
+        "SELECT 'Q1204187' AS ID_WIKIDATA FROM DUAL",
+        "SELECT DISTINCT ID_WIKIDATA FROM T_WC_T2S_LIST WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> ''",
+        "SELECT DISTINCT ID_WIKIDATA FROM T_WC_T2S_MOVEMENT WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> ''",
+        "SELECT DISTINCT ID_WIKIDATA FROM T_WC_T2S_COLLECTION WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> ''",
+        "SELECT DISTINCT ID_WIKIDATA FROM T_WC_T2S_GROUP WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> ''",
+        "SELECT DISTINCT ID_WIKIDATA FROM T_WC_T2S_DEATH WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> ''",
+        "SELECT DISTINCT ID_WIKIDATA FROM T_WC_T2S_AWARD WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> ''",
+        "SELECT DISTINCT ID_WIKIDATA FROM T_WC_T2S_NOMINATION WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> ''",
+        "SELECT DISTINCT ID_WIKIDATA FROM T_WC_T2S_TOPIC WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> ''",
+        "SELECT DISTINCT ID_WIKIDATA FROM T_WC_TMDB_CHARACTER WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> ''",
+        "SELECT DISTINCT ID_WIKIDATA FROM T_WC_TMDB_COLLECTION WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> ''",
+    ])
+    if strresumeid != "":
+        strsql += "AND ID_EPISODE >= " + strresumeid + " "
+    strsql += "ORDER BY ID_EPISODE ASC "
+    return strsql
+
+def build_keyword_sql(strresumeid):
+    strresumeid = normalize_resumeid(strresumeid)
+    strsql = ""
+    strsql += "SELECT DISTINCT T_WC_TMDB_KEYWORD.ID_KEYWORD AS id, ID_WIKIDATA FROM T_WC_TMDB_KEYWORD "
+    strsql += "WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> '' "
+    strsql += "AND ID_WIKIDATA REGEXP '^Q[0-9]+$' "
+    strsql = append_exclusion_tables(strsql, [
+        "T_WC_WIKIDATA_MOVIE_V1",
+        "T_WC_WIKIDATA_PERSON_V1",
+        "T_WC_WIKIDATA_ITEM_V1",
+        "T_WC_WIKIDATA_SERIE_V1",
+    ])
+    strsql = append_exclusion_queries(strsql, [
+        "SELECT 'Q1204187' AS ID_WIKIDATA FROM DUAL",
+        "SELECT DISTINCT ID_WIKIDATA FROM T_WC_T2S_LIST WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> ''",
+        "SELECT DISTINCT ID_WIKIDATA FROM T_WC_T2S_MOVEMENT WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> ''",
+        "SELECT DISTINCT ID_WIKIDATA FROM T_WC_T2S_COLLECTION WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> ''",
+        "SELECT DISTINCT ID_WIKIDATA FROM T_WC_T2S_GROUP WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> ''",
+        "SELECT DISTINCT ID_WIKIDATA FROM T_WC_T2S_DEATH WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> ''",
+        "SELECT DISTINCT ID_WIKIDATA FROM T_WC_T2S_AWARD WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> ''",
+        "SELECT DISTINCT ID_WIKIDATA FROM T_WC_T2S_NOMINATION WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> ''",
+        "SELECT DISTINCT ID_WIKIDATA FROM T_WC_T2S_TOPIC WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> ''",
+        "SELECT DISTINCT ID_WIKIDATA FROM T_WC_TMDB_CHARACTER WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> ''",
+        "SELECT DISTINCT ID_WIKIDATA FROM T_WC_TMDB_COLLECTION WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> ''",
+        "SELECT DISTINCT ID_WIKIDATA FROM T_WC_TMDB_EPISODE WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> ''",
+    ])
+    if strresumeid != "":
+        strsql += "AND ID_KEYWORD >= " + strresumeid + " "
+    strsql += "ORDER BY ID_KEYWORD ASC "
+    return strsql
+
+def build_season_sql(strresumeid):
+    strresumeid = normalize_resumeid(strresumeid)
+    strsql = ""
+    strsql += "SELECT DISTINCT T_WC_TMDB_SEASON.ID_SEASON AS id, ID_WIKIDATA FROM T_WC_TMDB_SEASON "
+    strsql += "WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> '' "
+    strsql += "AND ID_WIKIDATA REGEXP '^Q[0-9]+$' "
+    strsql = append_exclusion_tables(strsql, [
+        "T_WC_WIKIDATA_MOVIE_V1",
+        "T_WC_WIKIDATA_PERSON_V1",
+        "T_WC_WIKIDATA_ITEM_V1",
+        "T_WC_WIKIDATA_SERIE_V1",
+    ])
+    strsql = append_exclusion_queries(strsql, [
+        "SELECT 'Q1204187' AS ID_WIKIDATA FROM DUAL",
+        "SELECT DISTINCT ID_WIKIDATA FROM T_WC_T2S_LIST WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> ''",
+        "SELECT DISTINCT ID_WIKIDATA FROM T_WC_T2S_MOVEMENT WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> ''",
+        "SELECT DISTINCT ID_WIKIDATA FROM T_WC_T2S_COLLECTION WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> ''",
+        "SELECT DISTINCT ID_WIKIDATA FROM T_WC_T2S_GROUP WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> ''",
+        "SELECT DISTINCT ID_WIKIDATA FROM T_WC_T2S_DEATH WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> ''",
+        "SELECT DISTINCT ID_WIKIDATA FROM T_WC_T2S_AWARD WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> ''",
+        "SELECT DISTINCT ID_WIKIDATA FROM T_WC_T2S_NOMINATION WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> ''",
+        "SELECT DISTINCT ID_WIKIDATA FROM T_WC_T2S_TOPIC WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> ''",
+        "SELECT DISTINCT ID_WIKIDATA FROM T_WC_TMDB_CHARACTER WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> ''",
+        "SELECT DISTINCT ID_WIKIDATA FROM T_WC_TMDB_COLLECTION WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> ''",
+        "SELECT DISTINCT ID_WIKIDATA FROM T_WC_TMDB_EPISODE WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> ''",
+        "SELECT DISTINCT ID_WIKIDATA FROM T_WC_TMDB_KEYWORD WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> ''",
+    ])
+    if strresumeid != "":
+        strsql += "AND ID_SEASON >= " + strresumeid + " "
+    strsql += "ORDER BY ID_SEASON ASC "
+    return strsql
+
 def build_serie_sql(strresumeid):
+    strresumeid = normalize_resumeid(strresumeid)
     strsql = ""
     strsql += "SELECT DISTINCT T_WC_TMDB_SERIE.ID_SERIE AS id, ID_WIKIDATA FROM T_WC_TMDB_SERIE "
     strsql += "WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> '' "
@@ -81,6 +241,7 @@ def build_serie_sql(strresumeid):
     return strsql
 
 def build_other_sql(strresumeid):
+    strresumeid = normalize_resumeid(strresumeid)
     strsql = ""
     strsql += "SELECT DISTINCT 'Q1204187' AS id, 'Q1204187' AS ID_WIKIDATA FROM DUAL "
     strsql += "WHERE 'Q1204187' NOT IN (SELECT ID_WIKIDATA FROM T_WC_WIKIDATA_MOVIE_V1) "
@@ -90,6 +251,7 @@ def build_other_sql(strresumeid):
     return strsql
 
 def build_list_sql(strresumeid):
+    strresumeid = normalize_resumeid(strresumeid)
     strsql = ""
     strsql += "SELECT DISTINCT ID_WIKIDATA AS id, ID_WIKIDATA FROM T_WC_T2S_LIST "
     strsql += "WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> '' "
@@ -108,6 +270,7 @@ def build_list_sql(strresumeid):
     return strsql
 
 def build_movement_sql(strresumeid):
+    strresumeid = normalize_resumeid(strresumeid)
     strsql = ""
     strsql += "SELECT DISTINCT ID_WIKIDATA AS id, ID_WIKIDATA FROM T_WC_T2S_MOVEMENT "
     strsql += "WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> '' "
@@ -127,6 +290,7 @@ def build_movement_sql(strresumeid):
     return strsql
 
 def build_collection_sql(strresumeid):
+    strresumeid = normalize_resumeid(strresumeid)
     strsql = ""
     strsql += "SELECT DISTINCT ID_WIKIDATA AS id, ID_WIKIDATA FROM T_WC_T2S_COLLECTION "
     strsql += "WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> '' "
@@ -147,6 +311,7 @@ def build_collection_sql(strresumeid):
     return strsql
 
 def build_group_sql(strresumeid):
+    strresumeid = normalize_resumeid(strresumeid)
     strsql = ""
     strsql += "SELECT DISTINCT ID_WIKIDATA AS id, ID_WIKIDATA FROM T_WC_T2S_GROUP "
     strsql += "WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> '' "
@@ -168,6 +333,7 @@ def build_group_sql(strresumeid):
     return strsql
 
 def build_death_sql(strresumeid):
+    strresumeid = normalize_resumeid(strresumeid)
     strsql = ""
     strsql += "SELECT DISTINCT ID_WIKIDATA AS id, ID_WIKIDATA FROM T_WC_T2S_DEATH "
     strsql += "WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> '' "
@@ -190,6 +356,7 @@ def build_death_sql(strresumeid):
     return strsql
 
 def build_award_sql(strresumeid):
+    strresumeid = normalize_resumeid(strresumeid)
     strsql = ""
     strsql += "SELECT DISTINCT ID_WIKIDATA AS id, ID_WIKIDATA FROM T_WC_T2S_AWARD "
     strsql += "WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> '' "
@@ -213,6 +380,7 @@ def build_award_sql(strresumeid):
     return strsql
 
 def build_nomination_sql(strresumeid):
+    strresumeid = normalize_resumeid(strresumeid)
     strsql = ""
     strsql += "SELECT DISTINCT ID_WIKIDATA AS id, ID_WIKIDATA FROM T_WC_T2S_NOMINATION "
     strsql += "WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> '' "
@@ -237,6 +405,7 @@ def build_nomination_sql(strresumeid):
     return strsql
 
 def build_topic_sql(strresumeid):
+    strresumeid = normalize_resumeid(strresumeid)
     strsql = ""
     strsql += "SELECT DISTINCT ID_WIKIDATA AS id, ID_WIKIDATA FROM T_WC_T2S_TOPIC "
     strsql += "WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> '' "
@@ -305,6 +474,11 @@ try:
             strawardidold = cp.f_getservervariable("strwikipediacrawlerawardid",0)
             strnominationidold = cp.f_getservervariable("strwikipediacrawlernominationid",0)
             strtopicidold = cp.f_getservervariable("strwikipediacrawlertopicid",0)
+            strcharacteridold = cp.f_getservervariable("strwikipediacrawlercharacterid",0)
+            strtmdbcollectionidold = cp.f_getservervariable("strwikipediacrawlertmdbcollectionid",0)
+            strepisodeidold = cp.f_getservervariable("strwikipediacrawlerepisodeid",0)
+            strkeywordidold = cp.f_getservervariable("strwikipediacrawlerkeywordid",0)
+            strseasonidold = cp.f_getservervariable("strwikipediacrawlerseasonid",0)
             strcurrentcontent = cp.f_getservervariable("strwikipediacrawlercurrentcontent",0)
             arrprocesses = [
                 {
@@ -411,6 +585,46 @@ try:
                     "imagetable": "T_WC_WIKIDATA_ITEM_V1",
                     "imagecolumn": "WIKIPEDIA_IMAGE_PATH",
                 },
+                {
+                    "id": 218,
+                    "content": "character",
+                    "resumeid": strcharacteridold,
+                    "sqlbuilder": build_character_sql,
+                    "imagetable": "T_WC_TMDB_CHARACTER",
+                    "imagecolumn": "WIKIPEDIA_IMAGE_PATH",
+                },
+                {
+                    "id": 219,
+                    "content": "tmdbcollection",
+                    "resumeid": strtmdbcollectionidold,
+                    "sqlbuilder": build_tmdb_collection_sql,
+                    "imagetable": "",
+                    "imagecolumn": "",
+                },
+                {
+                    "id": 220,
+                    "content": "episode",
+                    "resumeid": strepisodeidold,
+                    "sqlbuilder": build_episode_sql,
+                    "imagetable": "",
+                    "imagecolumn": "",
+                },
+                {
+                    "id": 221,
+                    "content": "keyword",
+                    "resumeid": strkeywordidold,
+                    "sqlbuilder": build_keyword_sql,
+                    "imagetable": "",
+                    "imagecolumn": "",
+                },
+                {
+                    "id": 222,
+                    "content": "season",
+                    "resumeid": strseasonidold,
+                    "sqlbuilder": build_season_sql,
+                    "imagetable": "",
+                    "imagecolumn": "",
+                },
             ]
             resume_index = 0
             if strcurrentcontent != "":
@@ -461,6 +675,19 @@ try:
                                             if strkey in page_content['entities'][wikidata_id][strprops]:
                                                 page_title = page_content['entities'][wikidata_id][strprops][strkey]['title']
                                                 print(f"{strlanguage}: {page_title}")
+                                                strwikipediapageurl = f"https://{strlanguage}.wikipedia.org/wiki/{urllib.parse.quote(page_title.replace(' ', '_'))}"
+                                                strmainimageurl = ""
+                                                arrcouples = {}
+                                                arrcouples["ID_WIKIDATA"] = wikidata_id
+                                                arrcouples["LANG"] = strlanguage
+                                                arrcouples["ITEM_TYPE"] = strcontent
+                                                arrcouples["WIKIPEDIA_SITE_KEY"] = strkey
+                                                arrcouples["WIKIPEDIA_PAGE_TITLE"] = page_title
+                                                arrcouples["WIKIPEDIA_PAGE_URL"] = strwikipediapageurl
+                                                arrcouples["PAGE_EXISTS"] = 1
+                                                strsqltablename = "T_WC_WIKIPEDIA_PAGE_LANG"
+                                                strsqlupdatecondition = f"ID_WIKIDATA = '{wikidata_id}' AND LANG = '{strlanguage}'"
+                                                cp.f_sqlupdatearray(strsqltablename,arrcouples,strsqlupdatecondition,1)
                                                 #print("Now retrieving the image for this content")
                                                 if page_title:
                                                     if strimagetable != "" and strimagecolumn != "":
@@ -476,6 +703,33 @@ try:
                                                             #    print("No image found")
                                                         except Exception as err:
                                                             print(f"Main image retrieval error for {wikidata_id} ({strlanguage}): {err}")
+                                                    try:
+                                                        arrpageimages = wimg.get_wikipedia_page_images(page_title, strlanguage)
+                                                        for imageitem in arrpageimages:
+                                                            arrcouples = {}
+                                                            arrcouples["ID_WIKIDATA"] = wikidata_id
+                                                            arrcouples["LANG"] = strlanguage
+                                                            arrcouples["ITEM_TYPE"] = strcontent
+                                                            arrcouples["DISPLAY_ORDER"] = imageitem.get("display_order")
+                                                            arrcouples["IMAGE_URL"] = imageitem.get("image_url")
+                                                            arrcouples["IMAGE_URL_NORMALIZED"] = imageitem.get("image_url_normalized")
+                                                            arrcouples["THUMBNAIL_URL"] = imageitem.get("thumbnail_url")
+                                                            arrcouples["MEDIA_TYPE"] = imageitem.get("media_type")
+                                                            arrcouples["FILE_NAME"] = imageitem.get("file_name")
+                                                            arrcouples["COMMONS_TITLE"] = imageitem.get("commons_title")
+                                                            arrcouples["CAPTION"] = imageitem.get("caption")
+                                                            arrcouples["IS_MAIN_IMAGE"] = 1 if imageitem.get("image_url") == strmainimageurl else 0
+                                                            strsqltablename = "T_WC_WIKIPEDIA_PAGE_LANG_IMAGE"
+                                                            strsqlupdatecondition = f"ID_WIKIDATA = '{wikidata_id}' AND LANG = '{strlanguage}' AND DISPLAY_ORDER = {imageitem.get('display_order')}"
+                                                            cp.f_sqlupdatearray(strsqltablename,arrcouples,strsqlupdatecondition,1)
+                                                        if len(arrpageimages) > 0:
+                                                            strsqldelete = f"DELETE FROM T_WC_WIKIPEDIA_PAGE_LANG_IMAGE WHERE ID_WIKIDATA = '{wikidata_id}' AND LANG = '{strlanguage}' AND DISPLAY_ORDER > {len(arrpageimages)}"
+                                                        else:
+                                                            strsqldelete = f"DELETE FROM T_WC_WIKIPEDIA_PAGE_LANG_IMAGE WHERE ID_WIKIDATA = '{wikidata_id}' AND LANG = '{strlanguage}'"
+                                                        cursor2.execute(strsqldelete)
+                                                        cp.connectioncp.commit()
+                                                    except Exception as err:
+                                                        print(f"All page images retrieval error for {wikidata_id} ({strlanguage}): {err}")
                                                     url = f'https://{strlanguage}.wikipedia.org/w/api.php'
                                                     params = {
                                                         'action': 'parse',
@@ -486,9 +740,11 @@ try:
                                                     }
                                                     # By default we assume no success
                                                     intsuccess = False
+                                                    inthttpstatus = None
                                                     #print(url)
                                                     try:
                                                         response = requests.get(url, params=params, headers=headers)
+                                                        inthttpstatus = response.status_code
                                                         intsuccess = True
                                                     except requests.exceptions.HTTPError as http_err:
                                                         print(f'HTTP error occurred: {http_err}')  # Handle specific HTTP errors
@@ -500,6 +756,14 @@ try:
                                                         print(f'Request error occurred: {req_err}')  # Handle other request-related errors
                                                     except Exception as err:
                                                         print(f'An error occurred: {err}')  # Handle any other exceptions
+                                                    arrcouples = {}
+                                                    arrcouples["LAST_CRAWLED_AT"] = datetime.now(cp.paris_tz).strftime("%Y-%m-%d %H:%M:%S")
+                                                    arrcouples["HTTP_STATUS"] = inthttpstatus
+                                                    if intsuccess:
+                                                        arrcouples["LAST_SUCCESS_AT"] = datetime.now(cp.paris_tz).strftime("%Y-%m-%d %H:%M:%S")
+                                                    strsqltablename = "T_WC_WIKIPEDIA_PAGE_LANG"
+                                                    strsqlupdatecondition = f"ID_WIKIDATA = '{wikidata_id}' AND LANG = '{strlanguage}'"
+                                                    cp.f_sqlupdatearray(strsqltablename,arrcouples,strsqlupdatecondition,1)
                                                     if intsuccess:
                                                         data = response.json()
                                                         """
