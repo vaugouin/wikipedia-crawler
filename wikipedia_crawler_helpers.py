@@ -34,13 +34,22 @@ def get_linked_pages(wikidata_id, strprops, strlanguage):
             'languages': strlanguage
         }
     time.sleep(0.1)
-    response = requests.get(url, params=params, headers=headers)
-    print(response)
-    if response.status_code == 200:
-        data = response.json()
-        return data
-    else:
-        return f"Error: {response.status_code}"
+    for attempt in range(3):
+        try:
+            response = requests.get(url, params=params, headers=headers, timeout=30)
+            print(response)
+            if response.status_code == 200:
+                return response.json()
+            return f"Error: {response.status_code}"
+        except (requests.exceptions.SSLError,
+                requests.exceptions.ConnectionError,
+                requests.exceptions.Timeout) as err:
+            wait = 2 ** attempt
+            print(f"get_linked_pages transient error for {wikidata_id} ({strlanguage}) "
+                  f"attempt {attempt + 1}/3: {err}; retrying in {wait}s")
+            time.sleep(wait)
+    print(f"get_linked_pages giving up on {wikidata_id} ({strlanguage}) after 3 attempts")
+    return None
 
 
 def extract_titles_and_text(html_content):

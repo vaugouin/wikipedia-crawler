@@ -22,6 +22,39 @@ headers = {
 
 cwd = os.getcwd()
 
+# Quick-mode container: runs ONLY a fixed subset of processes and skips writes
+# to shared resume-state server variables so the main wikipedia-crawler
+# container can keep running 202 (person) in parallel without corruption.
+intquickmode = True
+#intquickmode = False
+#arrquickprocessids = {205, 218, 223}
+#arrquickprocessids = {220, 222}
+# Ordered from least-recently-updated to most-recently-updated ITEM_TYPE in
+# T_WC_WIKIPEDIA_PAGE_LANG_SECTION (MAX(TIM_UPDATED) ASC), so quick-mode
+# refreshes the stalest content first.
+arrquickprocessids = [
+    212,  # collection      (never updated)
+    213,  # group           (never updated)
+    214,  # death           (never updated)
+    219,  # tmdbcollection  (never updated)
+    221,  # keyword         (never updated)
+    209,  # other       (2026-04-14)
+    203,  # item        (2026-05-08)
+    204,  # serie       (2026-05-09)
+    210,  # list        (2026-05-09)
+    211,  # movement    (2026-05-09)
+    215,  # award       (2026-05-09)
+    216,  # nomination  (2026-05-09)
+    217,  # topic       (2026-05-09)
+    201,  # movie       (2026-05-18)
+    205,  # character   (2026-05-20)
+    218,  # character   (2026-05-20)
+    223,  # technical   (2026-05-20)
+    202,  # person      (2026-05-23)
+    220,  # episode     (2026-05-24)
+    222,  # season      (2026-05-24)
+]
+
 def append_exclusion_tables(strsql, arrtables):
     for strtable in arrtables:
         strsql += "AND ID_WIKIDATA NOT IN (SELECT ID_WIKIDATA FROM " + strtable + ") "
@@ -85,6 +118,7 @@ def build_character_sql(strresumeid):
         "T_WC_WIKIDATA_PERSON_V1",
         "T_WC_WIKIDATA_ITEM_V1",
         "T_WC_WIKIDATA_SERIE_V1",
+        "T_WC_WIKIDATA_CHARACTER_V1",
     ])
     strsql = append_exclusion_queries(strsql, [
         "SELECT 'Q1204187' AS ID_WIKIDATA FROM DUAL",
@@ -96,6 +130,7 @@ def build_character_sql(strresumeid):
         "SELECT DISTINCT ID_WIKIDATA FROM T_WC_T2S_AWARD WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> ''",
         "SELECT DISTINCT ID_WIKIDATA FROM T_WC_T2S_NOMINATION WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> ''",
         "SELECT DISTINCT ID_WIKIDATA FROM T_WC_T2S_TOPIC WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> ''",
+        "SELECT DISTINCT ID_WIKIDATA FROM T_WC_T2S_TECHNICAL WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> ''",
     ])
     if strresumeid != "":
         strsql += "AND ID_CHARACTER >= " + strresumeid + " "
@@ -113,6 +148,7 @@ def build_tmdb_collection_sql(strresumeid):
         "T_WC_WIKIDATA_PERSON_V1",
         "T_WC_WIKIDATA_ITEM_V1",
         "T_WC_WIKIDATA_SERIE_V1",
+        "T_WC_WIKIDATA_CHARACTER_V1",
     ])
     strsql = append_exclusion_queries(strsql, [
         "SELECT 'Q1204187' AS ID_WIKIDATA FROM DUAL",
@@ -124,6 +160,7 @@ def build_tmdb_collection_sql(strresumeid):
         "SELECT DISTINCT ID_WIKIDATA FROM T_WC_T2S_AWARD WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> ''",
         "SELECT DISTINCT ID_WIKIDATA FROM T_WC_T2S_NOMINATION WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> ''",
         "SELECT DISTINCT ID_WIKIDATA FROM T_WC_T2S_TOPIC WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> ''",
+        "SELECT DISTINCT ID_WIKIDATA FROM T_WC_T2S_TECHNICAL WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> ''",
         "SELECT DISTINCT ID_WIKIDATA FROM T_WC_TMDB_CHARACTER WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> ''",
     ])
     if strresumeid != "":
@@ -142,6 +179,7 @@ def build_episode_sql(strresumeid):
         "T_WC_WIKIDATA_PERSON_V1",
         "T_WC_WIKIDATA_ITEM_V1",
         "T_WC_WIKIDATA_SERIE_V1",
+        "T_WC_WIKIDATA_CHARACTER_V1",
     ])
     strsql = append_exclusion_queries(strsql, [
         "SELECT 'Q1204187' AS ID_WIKIDATA FROM DUAL",
@@ -153,6 +191,7 @@ def build_episode_sql(strresumeid):
         "SELECT DISTINCT ID_WIKIDATA FROM T_WC_T2S_AWARD WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> ''",
         "SELECT DISTINCT ID_WIKIDATA FROM T_WC_T2S_NOMINATION WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> ''",
         "SELECT DISTINCT ID_WIKIDATA FROM T_WC_T2S_TOPIC WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> ''",
+        "SELECT DISTINCT ID_WIKIDATA FROM T_WC_T2S_TECHNICAL WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> ''",
         "SELECT DISTINCT ID_WIKIDATA FROM T_WC_TMDB_CHARACTER WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> ''",
         "SELECT DISTINCT ID_WIKIDATA FROM T_WC_TMDB_COLLECTION WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> ''",
     ])
@@ -172,6 +211,7 @@ def build_keyword_sql(strresumeid):
         "T_WC_WIKIDATA_PERSON_V1",
         "T_WC_WIKIDATA_ITEM_V1",
         "T_WC_WIKIDATA_SERIE_V1",
+        "T_WC_WIKIDATA_CHARACTER_V1",
     ])
     strsql = append_exclusion_queries(strsql, [
         "SELECT 'Q1204187' AS ID_WIKIDATA FROM DUAL",
@@ -183,6 +223,7 @@ def build_keyword_sql(strresumeid):
         "SELECT DISTINCT ID_WIKIDATA FROM T_WC_T2S_AWARD WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> ''",
         "SELECT DISTINCT ID_WIKIDATA FROM T_WC_T2S_NOMINATION WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> ''",
         "SELECT DISTINCT ID_WIKIDATA FROM T_WC_T2S_TOPIC WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> ''",
+        "SELECT DISTINCT ID_WIKIDATA FROM T_WC_T2S_TECHNICAL WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> ''",
         "SELECT DISTINCT ID_WIKIDATA FROM T_WC_TMDB_CHARACTER WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> ''",
         "SELECT DISTINCT ID_WIKIDATA FROM T_WC_TMDB_COLLECTION WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> ''",
         "SELECT DISTINCT ID_WIKIDATA FROM T_WC_TMDB_EPISODE WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> ''",
@@ -203,6 +244,7 @@ def build_season_sql(strresumeid):
         "T_WC_WIKIDATA_PERSON_V1",
         "T_WC_WIKIDATA_ITEM_V1",
         "T_WC_WIKIDATA_SERIE_V1",
+        "T_WC_WIKIDATA_CHARACTER_V1",
     ])
     strsql = append_exclusion_queries(strsql, [
         "SELECT 'Q1204187' AS ID_WIKIDATA FROM DUAL",
@@ -214,6 +256,7 @@ def build_season_sql(strresumeid):
         "SELECT DISTINCT ID_WIKIDATA FROM T_WC_T2S_AWARD WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> ''",
         "SELECT DISTINCT ID_WIKIDATA FROM T_WC_T2S_NOMINATION WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> ''",
         "SELECT DISTINCT ID_WIKIDATA FROM T_WC_T2S_TOPIC WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> ''",
+        "SELECT DISTINCT ID_WIKIDATA FROM T_WC_T2S_TECHNICAL WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> ''",
         "SELECT DISTINCT ID_WIKIDATA FROM T_WC_TMDB_CHARACTER WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> ''",
         "SELECT DISTINCT ID_WIKIDATA FROM T_WC_TMDB_COLLECTION WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> ''",
         "SELECT DISTINCT ID_WIKIDATA FROM T_WC_TMDB_EPISODE WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> ''",
@@ -240,6 +283,23 @@ def build_serie_sql(strresumeid):
     strsql += "ORDER BY ID_SERIE ASC "
     return strsql
 
+def build_wikidata_character_sql(strresumeid):
+    strresumeid = normalize_resumeid(strresumeid)
+    strsql = ""
+    strsql += "SELECT DISTINCT T_WC_WIKIDATA_CHARACTER_V1.ID_WIKIDATA AS id, ID_WIKIDATA FROM T_WC_WIKIDATA_CHARACTER_V1 "
+    strsql += "WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> '' "
+    strsql += "AND ID_WIKIDATA REGEXP '^Q[0-9]+$' "
+    strsql = append_exclusion_tables(strsql, [
+        "T_WC_WIKIDATA_MOVIE_V1",
+        "T_WC_WIKIDATA_PERSON_V1",
+        "T_WC_WIKIDATA_ITEM_V1",
+        "T_WC_WIKIDATA_SERIE_V1",
+    ])
+    if strresumeid != "":
+        strsql += "AND ID_WIKIDATA >= '" + strresumeid + "' "
+    strsql += "ORDER BY ID_WIKIDATA ASC "
+    return strsql
+
 def build_other_sql(strresumeid):
     strresumeid = normalize_resumeid(strresumeid)
     strsql = ""
@@ -248,6 +308,7 @@ def build_other_sql(strresumeid):
     strsql += "AND 'Q1204187' NOT IN (SELECT ID_WIKIDATA FROM T_WC_WIKIDATA_PERSON_V1) "
     strsql += "AND 'Q1204187' NOT IN (SELECT ID_WIKIDATA FROM T_WC_WIKIDATA_ITEM_V1) "
     strsql += "AND 'Q1204187' NOT IN (SELECT ID_WIKIDATA FROM T_WC_WIKIDATA_SERIE_V1) "
+    strsql += "AND 'Q1204187' NOT IN (SELECT ID_WIKIDATA FROM T_WC_WIKIDATA_CHARACTER_V1) "
     return strsql
 
 def build_list_sql(strresumeid):
@@ -260,6 +321,7 @@ def build_list_sql(strresumeid):
         "T_WC_WIKIDATA_PERSON_V1",
         "T_WC_WIKIDATA_ITEM_V1",
         "T_WC_WIKIDATA_SERIE_V1",
+        "T_WC_WIKIDATA_CHARACTER_V1",
     ])
     strsql = append_exclusion_queries(strsql, [
         "SELECT 'Q1204187' AS ID_WIKIDATA FROM DUAL",
@@ -279,6 +341,7 @@ def build_movement_sql(strresumeid):
         "T_WC_WIKIDATA_PERSON_V1",
         "T_WC_WIKIDATA_ITEM_V1",
         "T_WC_WIKIDATA_SERIE_V1",
+        "T_WC_WIKIDATA_CHARACTER_V1",
     ])
     strsql = append_exclusion_queries(strsql, [
         "SELECT 'Q1204187' AS ID_WIKIDATA FROM DUAL",
@@ -299,6 +362,7 @@ def build_collection_sql(strresumeid):
         "T_WC_WIKIDATA_PERSON_V1",
         "T_WC_WIKIDATA_ITEM_V1",
         "T_WC_WIKIDATA_SERIE_V1",
+        "T_WC_WIKIDATA_CHARACTER_V1",
     ])
     strsql = append_exclusion_queries(strsql, [
         "SELECT 'Q1204187' AS ID_WIKIDATA FROM DUAL",
@@ -320,6 +384,7 @@ def build_group_sql(strresumeid):
         "T_WC_WIKIDATA_PERSON_V1",
         "T_WC_WIKIDATA_ITEM_V1",
         "T_WC_WIKIDATA_SERIE_V1",
+        "T_WC_WIKIDATA_CHARACTER_V1",
     ])
     strsql = append_exclusion_queries(strsql, [
         "SELECT 'Q1204187' AS ID_WIKIDATA FROM DUAL",
@@ -342,6 +407,7 @@ def build_death_sql(strresumeid):
         "T_WC_WIKIDATA_PERSON_V1",
         "T_WC_WIKIDATA_ITEM_V1",
         "T_WC_WIKIDATA_SERIE_V1",
+        "T_WC_WIKIDATA_CHARACTER_V1",
     ])
     strsql = append_exclusion_queries(strsql, [
         "SELECT 'Q1204187' AS ID_WIKIDATA FROM DUAL",
@@ -365,6 +431,7 @@ def build_award_sql(strresumeid):
         "T_WC_WIKIDATA_PERSON_V1",
         "T_WC_WIKIDATA_ITEM_V1",
         "T_WC_WIKIDATA_SERIE_V1",
+        "T_WC_WIKIDATA_CHARACTER_V1",
     ])
     strsql = append_exclusion_queries(strsql, [
         "SELECT 'Q1204187' AS ID_WIKIDATA FROM DUAL",
@@ -389,6 +456,7 @@ def build_nomination_sql(strresumeid):
         "T_WC_WIKIDATA_PERSON_V1",
         "T_WC_WIKIDATA_ITEM_V1",
         "T_WC_WIKIDATA_SERIE_V1",
+        "T_WC_WIKIDATA_CHARACTER_V1",
     ])
     strsql = append_exclusion_queries(strsql, [
         "SELECT 'Q1204187' AS ID_WIKIDATA FROM DUAL",
@@ -414,6 +482,7 @@ def build_topic_sql(strresumeid):
         "T_WC_WIKIDATA_PERSON_V1",
         "T_WC_WIKIDATA_ITEM_V1",
         "T_WC_WIKIDATA_SERIE_V1",
+        "T_WC_WIKIDATA_CHARACTER_V1",
     ])
     strsql = append_exclusion_queries(strsql, [
         "SELECT 'Q1204187' AS ID_WIKIDATA FROM DUAL",
@@ -430,6 +499,34 @@ def build_topic_sql(strresumeid):
     strsql += "ORDER BY ID_WIKIDATA ASC "
     return strsql
 
+def build_technical_sql(strresumeid):
+    strresumeid = normalize_resumeid(strresumeid)
+    strsql = ""
+    strsql += "SELECT DISTINCT ID_WIKIDATA AS id, ID_WIKIDATA FROM T_WC_T2S_TECHNICAL "
+    strsql += "WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> '' "
+    strsql = append_exclusion_tables(strsql, [
+        "T_WC_WIKIDATA_MOVIE_V1",
+        "T_WC_WIKIDATA_PERSON_V1",
+        "T_WC_WIKIDATA_ITEM_V1",
+        "T_WC_WIKIDATA_SERIE_V1",
+        "T_WC_WIKIDATA_CHARACTER_V1",
+    ])
+    strsql = append_exclusion_queries(strsql, [
+        "SELECT 'Q1204187' AS ID_WIKIDATA FROM DUAL",
+        "SELECT DISTINCT ID_WIKIDATA FROM T_WC_T2S_LIST WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> ''",
+        "SELECT DISTINCT ID_WIKIDATA FROM T_WC_T2S_MOVEMENT WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> ''",
+        "SELECT DISTINCT ID_WIKIDATA FROM T_WC_T2S_COLLECTION WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> ''",
+        "SELECT DISTINCT ID_WIKIDATA FROM T_WC_T2S_GROUP WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> ''",
+        "SELECT DISTINCT ID_WIKIDATA FROM T_WC_T2S_DEATH WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> ''",
+        "SELECT DISTINCT ID_WIKIDATA FROM T_WC_T2S_AWARD WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> ''",
+        "SELECT DISTINCT ID_WIKIDATA FROM T_WC_T2S_NOMINATION WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> ''",
+        "SELECT DISTINCT ID_WIKIDATA FROM T_WC_T2S_TOPIC WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> ''",
+    ])
+    if strresumeid != "":
+        strsql += "AND ID_WIKIDATA >= '" + strresumeid + "' "
+    strsql += "ORDER BY ID_WIKIDATA ASC "
+    return strsql
+
 # wikidata_id = "Q24829" # Wikidata ID for Orson Welles
 
 #strlanguage = 'en'
@@ -438,9 +535,11 @@ strprops = 'sitelinks'
 
 strprocessesexecutedprevious = cp.f_getservervariable("strwikipediacrawlerprocessesexecuted",0)
 strprocessesexecuteddesc = "List of processes executed in the Wikipedia crawler for Wikipedia pages retrieval"
-cp.f_setservervariable("strwikipediacrawlerprocessesexecutedprevious",strprocessesexecutedprevious,strprocessesexecuteddesc + " (previous execution)",0)
+if not intquickmode:
+    cp.f_setservervariable("strwikipediacrawlerprocessesexecutedprevious",strprocessesexecutedprevious,strprocessesexecuteddesc + " (previous execution)",0)
 strprocessesexecuted = ""
-cp.f_setservervariable("strwikipediacrawlerprocessesexecuted",strprocessesexecuted,strprocessesexecuteddesc,0)
+if not intquickmode:
+    cp.f_setservervariable("strwikipediacrawlerprocessesexecuted",strprocessesexecuted,strprocessesexecuteddesc,0)
 
 # Connect to the database
 #connection = pymysql.connect(host=cp.strdbhost, user=cp.strdbuser, password=cp.strdbpassword, database=cp.strdbname, cursorclass=pymysql.cursors.DictCursor)
@@ -454,18 +553,22 @@ try:
             start_time = time.time()
             strcurrentprocessdesc = "Current process in the Wikipedia crawler for Wikipedia pages retrieval"
             strnow = datetime.now(cp.paris_tz).strftime("%Y-%m-%d %H:%M:%S")
-            cp.f_setservervariable("strwikipediacrawlerstartdatetime",strnow,"Date and time of the last start of the Wikipedia crawler",0)
+            if not intquickmode:
+                cp.f_setservervariable("strwikipediacrawlerstartdatetime",strnow,"Date and time of the last start of the Wikipedia crawler",0)
             strtotalruntimedesc = "Total runtime of the Wikipedia crawler"
             strtotalruntimeprevious = cp.f_getservervariable("strwikipediacrawlertotalruntime",0)
-            cp.f_setservervariable("strwikipediacrawlertotalruntimeprevious",strtotalruntimeprevious,strtotalruntimedesc + " (previous execution)",0)
+            if not intquickmode:
+                cp.f_setservervariable("strwikipediacrawlertotalruntimeprevious",strtotalruntimeprevious,strtotalruntimedesc + " (previous execution)",0)
             strtotalruntime = "RUNNING"
-            cp.f_setservervariable("strwikipediacrawlertotalruntime",strtotalruntime,strtotalruntimedesc,0)
+            if not intquickmode:
+                cp.f_setservervariable("strwikipediacrawlertotalruntime",strtotalruntime,strtotalruntimedesc,0)
             
             strmovieidold = cp.f_getservervariable("strwikipediacrawlermovieid",0)
             strpersonidold = cp.f_getservervariable("strwikipediacrawlerpersonid",0)
             stritemidold = cp.f_getservervariable("strwikipediacrawleritemid",0)
             strotheridold = cp.f_getservervariable("strwikipediacrawlerotherid",0)
             strserieidold = cp.f_getservervariable("strwikipediacrawlerserieid",0)
+            strcharacteridold = cp.f_getservervariable("strwikipediacrawlercharacterid",0)
             strlistidold = cp.f_getservervariable("strwikipediacrawlerlistid",0)
             strmovementidold = cp.f_getservervariable("strwikipediacrawlermovementid",0)
             strcollectionidold = cp.f_getservervariable("strwikipediacrawlercollectionid",0)
@@ -474,6 +577,7 @@ try:
             strawardidold = cp.f_getservervariable("strwikipediacrawlerawardid",0)
             strnominationidold = cp.f_getservervariable("strwikipediacrawlernominationid",0)
             strtopicidold = cp.f_getservervariable("strwikipediacrawlertopicid",0)
+            strtechnicalidold = cp.f_getservervariable("strwikipediacrawlertechnicalid",0)
             strcharacteridold = cp.f_getservervariable("strwikipediacrawlercharacterid",0)
             strtmdbcollectionidold = cp.f_getservervariable("strwikipediacrawlertmdbcollectionid",0)
             strepisodeidold = cp.f_getservervariable("strwikipediacrawlerepisodeid",0)
@@ -512,6 +616,14 @@ try:
                     "sqlbuilder": build_serie_sql,
                     "imagetable": "T_WC_WIKIDATA_SERIE_V1",
                     "imagecolumn": "WIKIPEDIA_POSTER_PATH",
+                },
+                {
+                    "id": 205,
+                    "content": "character",
+                    "resumeid": strcharacteridold,
+                    "sqlbuilder": build_character_sql,
+                    "imagetable": "T_WC_WIKIDATA_CHARACTER_V1",
+                    "imagecolumn": "WIKIPEDIA_PROFILE_PATH",
                 },
                 {
                     "id": 209,
@@ -586,12 +698,20 @@ try:
                     "imagecolumn": "WIKIPEDIA_IMAGE_PATH",
                 },
                 {
+                    "id": 223,
+                    "content": "technical",
+                    "resumeid": strtechnicalidold,
+                    "sqlbuilder": build_technical_sql,
+                    "imagetable": "T_WC_T2S_TECHNICAL",
+                    "imagecolumn": "WIKIPEDIA_IMAGE_PATH",
+                },
+                {
                     "id": 218,
                     "content": "character",
                     "resumeid": strcharacteridold,
                     "sqlbuilder": build_character_sql,
-                    "imagetable": "T_WC_TMDB_CHARACTER",
-                    "imagecolumn": "WIKIPEDIA_IMAGE_PATH",
+                    "imagetable": "T_WC_WIKIDATA_CHARACTER_V1",
+                    "imagecolumn": "WIKIPEDIA_PROFILE_PATH",
                 },
                 {
                     "id": 219,
@@ -632,7 +752,11 @@ try:
                     if processconfig["content"] == strcurrentcontent:
                         resume_index = index
                         break
-            arrprocessscope = arrprocesses[resume_index:]
+            if intquickmode:
+                arrprocessesbyid = {p["id"]: p for p in arrprocesses}
+                arrprocessscope = [arrprocessesbyid[intid] for intid in arrquickprocessids if intid in arrprocessesbyid]
+            else:
+                arrprocessscope = arrprocesses[resume_index:]
             for processconfig in arrprocessscope:
                 intindex = processconfig["id"]
                 strcontent = processconfig["content"]
@@ -641,11 +765,13 @@ try:
                 strimagecolumn = processconfig["imagecolumn"]
                 strcurrentprocess = f"{intindex}: processing Wikipedia English and French " + strcontent + " content"
                 strprocessesexecuted += str(intindex) + ", "
-                cp.f_setservervariable("strwikipediacrawlerprocessesexecuted",strprocessesexecuted,strprocessesexecuteddesc,0)
+                if not intquickmode:
+                    cp.f_setservervariable("strwikipediacrawlerprocessesexecuted",strprocessesexecuted,strprocessesexecuteddesc,0)
                 if strsql != "":
                     print(strcurrentprocess)
-                    cp.f_setservervariable("strwikipediacrawlercurrentprocess",strcurrentprocess,"Current process in the Wikipedia crawler",0)
-                    cp.f_setservervariable("strwikipediacrawlercurrentcontent",strcontent,"Current content processed in the Wikipedia crawler",0)
+                    if not intquickmode:
+                        cp.f_setservervariable("strwikipediacrawlercurrentprocess",strcurrentprocess,"Current process in the Wikipedia crawler",0)
+                        cp.f_setservervariable("strwikipediacrawlercurrentcontent",strcontent,"Current content processed in the Wikipedia crawler",0)
                     strnow = datetime.now(cp.paris_tz).strftime("%Y-%m-%d %H:%M:%S")
                     cp.f_setservervariable("strwikipediacrawler"+strcontent+"startdatetime",strnow,"Date and time of the last start of the Wikipedia crawler for "+strcontent,0)
                     print(strsql)
@@ -696,6 +822,7 @@ try:
                                                             if strmainimageurl:
                                                                 print("Found an image:", strmainimageurl)
                                                                 arrcouples = {}
+                                                                arrcouples["ID_WIKIDATA"] = wikidata_id
                                                                 arrcouples[strimagecolumn] = strmainimageurl
                                                                 strsqlupdatecondition = f"ID_WIKIDATA = '{wikidata_id}'"
                                                                 cp.f_sqlupdatearray(strimagetable, arrcouples, strsqlupdatecondition, 1)
@@ -705,6 +832,15 @@ try:
                                                             print(f"Main image retrieval error for {wikidata_id} ({strlanguage}): {err}")
                                                     try:
                                                         arrpageimages = wimg.get_wikipedia_page_images(page_title, strlanguage)
+                                                        if not strmainimageurl and strimagetable != "" and strimagecolumn != "" and len(arrpageimages) > 0:
+                                                            strmainimageurl = arrpageimages[0].get("image_url") or ""
+                                                            if strmainimageurl:
+                                                                print("Main image fallback (first page image):", strmainimageurl)
+                                                                arrcouples = {}
+                                                                arrcouples["ID_WIKIDATA"] = wikidata_id
+                                                                arrcouples[strimagecolumn] = strmainimageurl
+                                                                strsqlupdatecondition = f"ID_WIKIDATA = '{wikidata_id}'"
+                                                                cp.f_sqlupdatearray(strimagetable, arrcouples, strsqlupdatecondition, 1)
                                                         for imageitem in arrpageimages:
                                                             arrcouples = {}
                                                             arrcouples["ID_WIKIDATA"] = wikidata_id
@@ -865,17 +1001,22 @@ try:
                             if index + 1 < len(arrprocesses):
                                 strnextcontent = arrprocesses[index + 1]["content"]
                             break
-                    cp.f_setservervariable("strwikipediacrawlercurrentcontent",strnextcontent,"Current content processed in the Wikipedia crawler",0)
+                    if not intquickmode:
+                        cp.f_setservervariable("strwikipediacrawlercurrentcontent",strnextcontent,"Current content processed in the Wikipedia crawler",0)
             strcurrentprocess = ""
-            cp.f_setservervariable("strwikipediacrawlercurrentprocess",strcurrentprocess,strcurrentprocessdesc,0)
+            if not intquickmode:
+                cp.f_setservervariable("strwikipediacrawlercurrentprocess",strcurrentprocess,strcurrentprocessdesc,0)
             strnow = datetime.now(cp.paris_tz).strftime("%Y-%m-%d %H:%M:%S")
-            cp.f_setservervariable("strwikipediacrawlerenddatetime",strnow,"Date and time of the Wikipedia crawler ending",0)
+            if not intquickmode:
+                cp.f_setservervariable("strwikipediacrawlerenddatetime",strnow,"Date and time of the Wikipedia crawler ending",0)
             # Calculate total runtime and convert to readable format
             end_time = time.time()
             strtotalruntime = int(end_time - start_time)  # Total runtime in seconds
-            cp.f_setservervariable("strwikipediacrawlertotalruntimesecond",str(strtotalruntime),strtotalruntimedesc,0)
+            if not intquickmode:
+                cp.f_setservervariable("strwikipediacrawlertotalruntimesecond",str(strtotalruntime),strtotalruntimedesc,0)
             readable_duration = cp.convert_seconds_to_duration(strtotalruntime)
-            cp.f_setservervariable("strwikipediacrawlertotalruntime",readable_duration,strtotalruntimedesc,0)
+            if not intquickmode:
+                cp.f_setservervariable("strwikipediacrawlertotalruntime",readable_duration,strtotalruntimedesc,0)
             print(f"Total runtime: {strtotalruntime} seconds ({readable_duration})")
     print("Process completed")
 except pymysql.MySQLError as e:

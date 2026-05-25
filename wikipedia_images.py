@@ -73,15 +73,53 @@ def get_wikipedia_main_image_url(title: str, lang: str) -> str:
 
     data = resp.json()
     if isinstance(data, dict):
+        # The REST summary endpoint appends ?utm_source=...&utm_campaign=api... tracking
+        # params that push URLs past varchar(200) DB columns. Strip them; upload.wikimedia.org
+        # URLs are path-based and never carry meaningful query strings.
         original = data.get("originalimage")
         if isinstance(original, dict) and original.get("source"):
-            return original["source"]
+            return original["source"].split("?", 1)[0]
 
         thumb = data.get("thumbnail")
         if isinstance(thumb, dict) and thumb.get("source"):
-            return thumb["source"]
+            return thumb["source"].split("?", 1)[0]
 
     raise RuntimeError(f"No main image found in summary for '{title}' ({lang})")
+
+# MediaWiki UI chrome / template decoration files. These are embedded on most
+# Wikipedia pages by infoboxes, External-links sections, protection notices,
+# stub/disambig markers, etc. — but never represent the page's subject. We drop
+# them before they can land in ``get_wikipedia_page_images`` and get picked up
+# as the page's "main image" by the crawler's first-page-image fallback.
+_UI_CHROME_PATTERNS = [
+    re.compile(r"^OOjs_UI_icon_", re.IGNORECASE),
+    re.compile(
+        r"^(Commons|Wikidata|Wikiquote|Wikisource|Wikibooks|Wikinews|"
+        r"Wikiversity|Wikivoyage|Wiktionary|Wikimedia|Wikipedia)-logo",
+        re.IGNORECASE,
+    ),
+    re.compile(r"^(Padlock|Lock)-", re.IGNORECASE),
+    re.compile(r"^(Ambox|Imbox|Tmbox|Cmbox|Ombox|Fmbox)", re.IGNORECASE),
+    re.compile(r"^Stub_icon", re.IGNORECASE),
+    re.compile(r"^Disambig", re.IGNORECASE),
+    re.compile(r"^Question_book", re.IGNORECASE),
+    re.compile(r"^Wiki_letter_w", re.IGNORECASE),
+]
+
+
+def _is_ui_chrome_file(title: str) -> bool:
+    """Return True if ``title`` is a MediaWiki UI/template-decoration file.
+
+    ``title`` is the namespaced title returned by the Action API
+    (e.g. ``"File:OOjs_UI_icon_edit-ltr-progressive.svg"`` on enwiki or
+    ``"Fichier:Commons-logo.svg"`` on frwiki); the namespace prefix is stripped
+    before matching so the filter works across language editions.
+    """
+    if not title:
+        return False
+    name = title.split(":", 1)[1] if ":" in title else title
+    return any(p.match(name) for p in _UI_CHROME_PATTERNS)
+
 
 def _get_wikipedia_page_media_items(title: str, lang: str) -> list[dict]:
     """Fetch image items for a page via the MediaWiki Action API.
@@ -121,6 +159,11 @@ def _get_wikipedia_page_media_items(title: str, lang: str) -> list[dict]:
         if not cont:
             break
         params.update(cont)
+
+    # Drop MediaWiki UI/template decoration files before the imageinfo step —
+    # they get embedded on most pages but are not page content. This also saves
+    # ~one imageinfo API call per 50 files filtered.
+    file_titles = [t for t in file_titles if not _is_ui_chrome_file(t)]
 
     if not file_titles:
         return []

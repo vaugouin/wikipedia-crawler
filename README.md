@@ -2,6 +2,35 @@
 
 `wikipedia_crawler.py` is a batch enrichment script that reads Wikidata-linked entities from the database, retrieves their English and French Wikipedia pages, extracts structured section content, and stores both the textual content and selected Wikipedia image URLs back into MySQL.
 
+## Entities crawled
+
+The table below lists every entity family processed by `wikipedia_crawler.py`, in execution order. Each row corresponds to one entry in the `arrprocesses` config in `wikipedia_crawler.py`.
+
+| ID  | Content             | Source table                | Image target                                             |
+|-----|---------------------|-----------------------------|----------------------------------------------------------|
+| 201 | `movie`             | `T_WC_TMDB_MOVIE`           | `T_WC_WIKIDATA_MOVIE_V1.WIKIPEDIA_POSTER_PATH`           |
+| 202 | `person`            | `T_WC_TMDB_PERSON`          | `T_WC_WIKIDATA_PERSON_V1.WIKIPEDIA_PROFILE_PATH`         |
+| 203 | `item`              | `T_WC_WIKIDATA_ITEM_V1`     | `T_WC_WIKIDATA_ITEM_V1.WIKIPEDIA_IMAGE_PATH`             |
+| 204 | `serie`             | `T_WC_TMDB_SERIE`           | `T_WC_WIKIDATA_SERIE_V1.WIKIPEDIA_POSTER_PATH`           |
+| 205 | `wikidatacharacter` | `T_WC_WIKIDATA_CHARACTER_V1`| `T_WC_WIKIDATA_CHARACTER_V1.WIKIPEDIA_PROFILE_PATH`      |
+| 209 | `other`             | hard-coded `Q1204187`       | `T_WC_WIKIDATA_ITEM_V1.WIKIPEDIA_IMAGE_PATH`             |
+| 210 | `list`              | `T_WC_T2S_LIST`             | `T_WC_WIKIDATA_ITEM_V1.WIKIPEDIA_IMAGE_PATH`             |
+| 211 | `movement`          | `T_WC_T2S_MOVEMENT`         | `T_WC_WIKIDATA_ITEM_V1.WIKIPEDIA_IMAGE_PATH`             |
+| 212 | `collection`        | `T_WC_T2S_COLLECTION`       | `T_WC_WIKIDATA_ITEM_V1.WIKIPEDIA_IMAGE_PATH`             |
+| 213 | `group`             | `T_WC_T2S_GROUP`            | `T_WC_WIKIDATA_ITEM_V1.WIKIPEDIA_IMAGE_PATH`             |
+| 214 | `death`             | `T_WC_T2S_DEATH`            | `T_WC_WIKIDATA_ITEM_V1.WIKIPEDIA_IMAGE_PATH`             |
+| 215 | `award`             | `T_WC_T2S_AWARD`            | `T_WC_WIKIDATA_ITEM_V1.WIKIPEDIA_IMAGE_PATH`             |
+| 216 | `nomination`        | `T_WC_T2S_NOMINATION`       | `T_WC_WIKIDATA_ITEM_V1.WIKIPEDIA_IMAGE_PATH`             |
+| 217 | `topic`             | `T_WC_T2S_TOPIC`            | `T_WC_WIKIDATA_ITEM_V1.WIKIPEDIA_IMAGE_PATH`             |
+| 223 | `technical`         | `T_WC_T2S_TECHNICAL`        | `T_WC_T2S_TECHNICAL.WIKIPEDIA_IMAGE_PATH`                |
+| 218 | `character`         | `T_WC_TMDB_CHARACTER`       | `T_WC_WIKIDATA_CHARACTER_V1.WIKIPEDIA_PROFILE_PATH`      |
+| 219 | `tmdbcollection`    | `T_WC_TMDB_COLLECTION`      | _(not yet configured)_                                   |
+| 220 | `episode`           | `T_WC_TMDB_EPISODE`         | _(planned: `T_WC_WIKIDATA_EPISODE_V1.WIKIPEDIA_POSTER_PATH` — see [Planned future work](#planned-future-work))_ |
+| 221 | `keyword`           | `T_WC_TMDB_KEYWORD`         | _(not yet configured)_                                   |
+| 222 | `season`            | `T_WC_TMDB_SEASON`          | _(planned: `T_WC_WIKIDATA_SEASON_V1.WIKIPEDIA_POSTER_PATH` — see [Planned future work](#planned-future-work))_ |
+
+For every row of every entity family, page metadata, page sections, and page images are written to the shared `T_WC_WIKIPEDIA_PAGE_LANG*` tables regardless of whether an "Image target" is configured. The "Image target" column only controls where the **main** image URL is additionally written back into the entity's own table.
+
 ## What the crawler does
 
 The crawler processes multiple content types in sequence:
@@ -10,6 +39,7 @@ The crawler processes multiple content types in sequence:
 - `person`
 - `item`
 - `serie`
+- `wikidatacharacter`
 - `other`
 - `list`
 - `movement`
@@ -95,6 +125,7 @@ The crawler currently associates image results with these destination tables/col
 - `person` -> `T_WC_WIKIDATA_PERSON_V1.WIKIPEDIA_PROFILE_PATH`
 - `item` -> `T_WC_WIKIDATA_ITEM_V1.WIKIPEDIA_IMAGE_PATH`
 - `serie` -> `T_WC_WIKIDATA_SERIE_V1.WIKIPEDIA_POSTER_PATH`
+- `wikidatacharacter` -> `T_WC_WIKIDATA_CHARACTER_V1.WIKIPEDIA_PROFILE_PATH`
 - `other` -> `T_WC_WIKIDATA_ITEM_V1.WIKIPEDIA_IMAGE_PATH`
 - `list` -> `T_WC_WIKIDATA_ITEM_V1.WIKIPEDIA_IMAGE_PATH`
 - `movement` -> `T_WC_WIKIDATA_ITEM_V1.WIKIPEDIA_IMAGE_PATH`
@@ -112,6 +143,8 @@ The following content families still store full page-level image rows in `T_WC_W
 - `episode`
 - `keyword`
 - `season`
+
+For `episode` and `season`, the downloaded Wikipedia pages are sourced from `T_WC_TMDB_EPISODE` and `T_WC_TMDB_SEASON` respectively, and the destination Wikidata tables (`T_WC_WIKIDATA_EPISODE_V1` and `T_WC_WIKIDATA_SEASON_V1`) already exist with a `WIKIPEDIA_POSTER_PATH` column. Wiring the main image URL into those columns is intentionally deferred — see [Planned future work](#planned-future-work).
 
 ## Database writes performed by the crawler
 
@@ -172,7 +205,7 @@ Fields written include:
 ### Image URL enrichment
 When configured, the main image URL is written back to a content-specific Wikidata table.
 
-For `item`, `other`, `list`, `movement`, `collection`, `group`, `death`, `award`, `nomination`, and `topic`, the crawler writes to:
+For `item`, `other`, `list`, `movement`, `collection`, `group`, `death`, `award`, `nomination`, `topic`, and `technical`, the crawler writes to:
 
 - `T_WC_WIKIDATA_ITEM_V1.WIKIPEDIA_IMAGE_PATH`
 
@@ -186,6 +219,8 @@ For `tmdbcollection`, `episode`, `keyword`, and `season`, no source-table main i
 - `T_WC_WIKIPEDIA_PAGE_LANG_IMAGE`
 - `T_WC_WIKIPEDIA_PAGE_LANG_SECTION`
 
+For `episode` and `season` specifically, the rows selected from `T_WC_TMDB_EPISODE` and `T_WC_TMDB_SEASON` are fully crawled (page metadata, page-level images, and section content). Writing the main image URL into `T_WC_WIKIDATA_EPISODE_V1.WIKIPEDIA_POSTER_PATH` and `T_WC_WIKIDATA_SEASON_V1.WIKIPEDIA_POSTER_PATH` is **not yet enabled** and is tracked in [Planned future work](#planned-future-work).
+
 The `other` family is split into multiple independent resumable processes:
 
 - `209` -> `other`
@@ -197,6 +232,7 @@ The `other` family is split into multiple independent resumable processes:
 - `215` -> `award`
 - `216` -> `nomination`
 - `217` -> `topic`
+- `223` -> `technical`
 - `218` -> `character`
 - `219` -> `tmdbcollection`
 - `220` -> `episode`
@@ -211,6 +247,7 @@ The process order is:
 - `person`
 - `item`
 - `serie`
+- `wikidatacharacter`
 - `other`
 - `list`
 - `movement`
@@ -220,13 +257,14 @@ The process order is:
 - `award`
 - `nomination`
 - `topic`
+- `technical`
 - `character`
 - `tmdbcollection`
 - `episode`
 - `keyword`
 - `season`
 
-Each later process excludes entities already owned by earlier families in that order.
+Each later process excludes entities already owned by earlier families in that order. Note that `wikidatacharacter` (process 205, sourced from `T_WC_WIKIDATA_CHARACTER_V1`) and `character` (process 218, sourced from `T_WC_TMDB_CHARACTER`) are two distinct processes operating on character entities from different upstream tables. The Wikidata-native source runs first; the TMDB-sourced process then excludes any IDs already covered by it.
 
 Examples:
 
@@ -259,6 +297,7 @@ At startup, the crawler reads this variable and adjusts `arrprocessscope`:
 - if `person`, it skips `movie`
 - if `item`, it skips `movie` and `person`
 - if `serie`, it skips `movie`, `person`, and `item`
+- if `wikidatacharacter`, it skips `movie`, `person`, `item`, and `serie`
 - if `other`, it resumes directly from `other`
 - if `list`, it resumes directly from `list`
 - if `movement`, it resumes directly from `movement`
@@ -268,6 +307,7 @@ At startup, the crawler reads this variable and adjusts `arrprocessscope`:
 - if `award`, it resumes directly from `award`
 - if `nomination`, it resumes directly from `nomination`
 - if `topic`, it resumes directly from `topic`
+- if `technical`, it resumes directly from `technical`
 - if `character`, it resumes directly from `character`
 - if `tmdbcollection`, it resumes directly from `tmdbcollection`
 - if `episode`, it resumes directly from `episode`
@@ -285,6 +325,7 @@ For each content family, the crawler keeps the last processed identifier in a se
 - `strwikipediacrawlerpersonid`
 - `strwikipediacrawleritemid`
 - `strwikipediacrawlerserieid`
+- `strwikipediacrawlerwikidatacharacterid`
 - `strwikipediacrawlerotherid`
 - `strwikipediacrawlerlistid`
 - `strwikipediacrawlermovementid`
@@ -294,6 +335,7 @@ For each content family, the crawler keeps the last processed identifier in a se
 - `strwikipediacrawlerawardid`
 - `strwikipediacrawlernominationid`
 - `strwikipediacrawlertopicid`
+- `strwikipediacrawlertechnicalid`
 - `strwikipediacrawlercharacterid`
 - `strwikipediacrawlertmdbcollectionid`
 - `strwikipediacrawlerepisodeid`
@@ -327,6 +369,42 @@ The crawler also stores monitoring variables such as:
 
 These variables are useful both for observability and for confirming where an interrupted run stopped.
 
+## Quick mode
+
+Quick mode is a parallel-execution hatch that lets a secondary `wikipedia-crawler` container churn through a fixed, ordered subset of processes while the main container keeps running long jobs (typically `202 person`). It is controlled by two top-of-file variables in [wikipedia_crawler.py](wikipedia_crawler.py):
+
+- `intquickmode` — when `True`, restricts the run to the IDs listed in `arrquickprocessids` and **skips writes to shared resume-state server variables** so the two containers do not corrupt each other's checkpoints.
+- `arrquickprocessids` — an **ordered list** of process IDs. Quick mode iterates this list in order via an `id → processconfig` lookup, so the list order — not the `arrprocesses` definition order — determines execution order.
+
+The list is ordered from least-recently to most-recently updated `ITEM_TYPE` in `T_WC_WIKIPEDIA_PAGE_LANG_SECTION` (queried with `SELECT MAX(TIM_UPDATED), ITEM_TYPE ... GROUP BY ITEM_TYPE ORDER BY MAX_TIM_UPDATED ASC`). This refreshes the stalest content first. `ITEM_TYPE`s with no rows in `T_WC_WIKIPEDIA_PAGE_LANG_SECTION` (never crawled) are placed at the head of the list.
+
+Current order:
+
+| Position | ID  | Content          | MAX(TIM_UPDATED) |
+|----------|-----|------------------|------------------|
+| 1        | 212 | `collection`     | never updated    |
+| 2        | 213 | `group`          | never updated    |
+| 3        | 214 | `death`          | never updated    |
+| 4        | 219 | `tmdbcollection` | never updated    |
+| 5        | 221 | `keyword`        | never updated    |
+| 6        | 209 | `other`          | 2026-04-14       |
+| 7        | 203 | `item`           | 2026-05-08       |
+| 8        | 204 | `serie`          | 2026-05-09       |
+| 9        | 210 | `list`           | 2026-05-09       |
+| 10       | 211 | `movement`       | 2026-05-09       |
+| 11       | 215 | `award`          | 2026-05-09       |
+| 12       | 216 | `nomination`     | 2026-05-09       |
+| 13       | 217 | `topic`          | 2026-05-09       |
+| 14       | 201 | `movie`          | 2026-05-18       |
+| 15       | 205 | `character` (Wikidata) | 2026-05-20 |
+| 16       | 218 | `character` (TMDB)     | 2026-05-20 |
+| 17       | 223 | `technical`      | 2026-05-20       |
+| 18       | 202 | `person`         | 2026-05-23       |
+| 19       | 220 | `episode`        | 2026-05-24       |
+| 20       | 222 | `season`         | 2026-05-24       |
+
+When `intquickmode = False`, the regular `arrprocessscope = arrprocesses[resume_index:]` path applies and the [Resume mechanism](#resume-mechanism) above governs ordering and checkpointing.
+
 ## Important detail about resume behavior
 
 The resume mechanism is checkpoint-based, not transactionally exact.
@@ -338,6 +416,20 @@ That means:
 - this is usually safe because writes use `cp.f_sqlupdatearray()` and section rows are updated by key conditions
 
 So the crawler is designed to be restartable and reasonably idempotent, even if a small overlap happens after a crash or manual stop.
+
+## Planned future work
+
+### Wire main image URL for `episode` and `season` into the V1 Wikidata tables
+
+The `episode` (process 220) and `season` (process 222) processes already download Wikipedia content from `T_WC_TMDB_EPISODE` and `T_WC_TMDB_SEASON` and populate the shared `T_WC_WIKIPEDIA_PAGE_LANG*` tables. The destination tables `T_WC_WIKIDATA_EPISODE_V1` and `T_WC_WIKIDATA_SEASON_V1` both already define a `WIKIPEDIA_POSTER_PATH` column, but `wikipedia_crawler.py` deliberately leaves the `imagetable` / `imagecolumn` fields empty for these two processes today.
+
+A later iteration will:
+
+- set `imagetable` / `imagecolumn` for process 220 to `T_WC_WIKIDATA_EPISODE_V1` / `WIKIPEDIA_POSTER_PATH`
+- set `imagetable` / `imagecolumn` for process 222 to `T_WC_WIKIDATA_SEASON_V1` / `WIKIPEDIA_POSTER_PATH`
+- backfill `WIKIPEDIA_POSTER_PATH` for episodes and seasons already crawled, since the main image URL is currently discarded for those families
+
+Until that change is made, `T_WC_WIKIDATA_EPISODE_V1` and `T_WC_WIKIDATA_SEASON_V1` are intentionally **not written to** by this crawler.
 
 ## External services used
 
@@ -357,6 +449,38 @@ The script reads a Wikimedia user agent from an environment variable:
 Both `wikipedia_images.py` and `wikipedia_crawler_helpers.py` fall back to a static default string when the variable is unset, so the crawler will still run, but Wikimedia's policy asks for an identifying contact in the UA, so setting this is recommended (especially in containerized deployments where `.env` may not be mounted).
 
 It also depends on database connection utilities and helper functions defined in `citizenphil.py`.
+
+## Docker deployment
+
+Secrets must never be baked into the Docker image. The project follows these rules:
+
+- `.env` is listed in [.dockerignore](.dockerignore) so local environment files are excluded from the build context and cannot end up in image layers, build cache, or pushed registries.
+- The [Dockerfile](Dockerfile) never `COPY`s `.env` and never sets secrets via `ENV` lines. Only non-sensitive defaults belong in the image.
+- At runtime, secrets are injected from a host-managed env file that lives **outside** the application source tree, using Docker's `--env-file` option in `docker run`. The convention is `/home/debian/docker/wikipedia-crawler/.env` on the deployment host.
+
+The startup script [wikipedia-crawler.sh](wikipedia-crawler.sh) already wires this up:
+
+```bash
+docker run -d --rm --network="host" \
+  --env-file /home/debian/docker/wikipedia-crawler/.env \
+  -v $(pwd):/home/debian/docker/wikipedia-crawler \
+  --name wikipedia-crawler wikipedia-crawler-python-app
+```
+
+To run an interactive container manually with the same secret-handling, mirror the same flag:
+
+```bash
+docker run -it --rm --network="host" \
+  --env-file /home/debian/docker/wikipedia-crawler/.env \
+  --name my-running-app wikipedia-crawler-python-app
+```
+
+The env file on the host should contain the runtime configuration, for example:
+
+```
+WIKIMEDIA_USER_AGENT=MovieMatchBot/1.0 (https://www.vaugouin.com/moviematch-en/; philippe@vaugouin.com)
+# plus database connection variables read by citizenphil.py
+```
 
 ## Testing
 

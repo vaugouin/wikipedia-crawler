@@ -2,3 +2,6 @@ movie
 person
 item
 serie
+.env
+.env.*
+!.env.example
