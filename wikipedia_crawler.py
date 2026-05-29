@@ -881,7 +881,9 @@ try:
                                                     try:
                                                         response = requests.get(url, params=params, headers=headers)
                                                         inthttpstatus = response.status_code
-                                                        intsuccess = True
+                                                        intsuccess = (inthttpstatus == 200)
+                                                        if not intsuccess:
+                                                            print(f'parse API HTTP {inthttpstatus} for {page_title} ({strlanguage})')
                                                     except requests.exceptions.HTTPError as http_err:
                                                         print(f'HTTP error occurred: {http_err}')  # Handle specific HTTP errors
                                                     except requests.exceptions.ConnectionError as conn_err:
@@ -901,7 +903,12 @@ try:
                                                     strsqlupdatecondition = f"ID_WIKIDATA = '{wikidata_id}' AND LANG = '{strlanguage}'"
                                                     cp.f_sqlupdatearray(strsqltablename,arrcouples,strsqlupdatecondition,1)
                                                     if intsuccess:
-                                                        data = response.json()
+                                                        try:
+                                                            data = response.json()
+                                                        except ValueError as json_err:
+                                                            print(f'parse API JSON decode error for {page_title} ({strlanguage}): {json_err}')
+                                                            data = None
+                                                    if intsuccess and data is not None:
                                                         """
                                                         strjsonfilename = wikidata_id + '-' + strlanguage + '-data.json'
                                                         file_path = os.path.join(cwd, strjsonfilename)
