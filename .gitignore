@@ -6,3 +6,4 @@ serie
 .env
 __pycache__/
 .claude/
+archive/

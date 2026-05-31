@@ -1,9 +1,10 @@
 import os
-import time
 
 import requests
 from bs4 import BeautifulSoup
 from dotenv import load_dotenv
+
+from wikipedia_http import get_session, rate_limit
 
 load_dotenv()
 
@@ -15,45 +16,87 @@ headers = {
     'User-Agent': strwikipediauseragent
 }
 
+WIKIDATA_API_URL = "https://www.wikidata.org/w/api.php"
+
 
 def get_linked_pages(wikidata_id, strprops, strlanguage):
-    url = f"https://www.wikidata.org/w/api.php"
-    if strprops == '':
-        params = {
-            'action': 'wbgetentities',
-            'format': 'json',
-            'ids': wikidata_id,
-            'languages': strlanguage
-        }
-    else:
-        params = {
-            'action': 'wbgetentities',
-            'format': 'json',
-            'ids': wikidata_id,
-            'props': strprops,
-            'languages': strlanguage
-        }
-    time.sleep(0.1)
-    for attempt in range(3):
-        try:
-            response = requests.get(url, params=params, headers=headers, timeout=30)
-            print(response)
-            if response.status_code == 200:
-                return response.json()
-            return f"Error: {response.status_code}"
-        except (requests.exceptions.SSLError,
-                requests.exceptions.ConnectionError,
-                requests.exceptions.Timeout) as err:
-            wait = 2 ** attempt
-            print(f"get_linked_pages transient error for {wikidata_id} ({strlanguage}) "
-                  f"attempt {attempt + 1}/3: {err}; retrying in {wait}s")
-            time.sleep(wait)
-    print(f"get_linked_pages giving up on {wikidata_id} ({strlanguage}) after 3 attempts")
-    return None
+    """Resolve a single Wikidata id to its sitelink/page data for one language.
+
+    Retained for callers (and tests) that resolve one id at a time;
+    ``get_linked_pages_batch`` is the fast path used by the crawler.
+    """
+    params = {
+        'action': 'wbgetentities',
+        'format': 'json',
+        'ids': wikidata_id,
+        'languages': strlanguage,
+        'maxlag': 5,
+    }
+    if strprops != '':
+        params['props'] = strprops
+    session = get_session()
+    try:
+        rate_limit()
+        response = session.get(WIKIDATA_API_URL, params=params, timeout=30)
+        print(response)
+        if response.status_code == 200:
+            return response.json()
+        return f"Error: {response.status_code}"
+    except (requests.exceptions.SSLError,
+            requests.exceptions.ConnectionError,
+            requests.exceptions.Timeout) as err:
+        # The shared session already retries/backs off on transient HTTP errors;
+        # this guards the rarer connection-level failures it surfaces.
+        print(f"get_linked_pages transient error for {wikidata_id} ({strlanguage}): {err}")
+        return None
 
 
-def extract_titles_and_text(html_content):
-    soup = BeautifulSoup(html_content, 'html.parser')
+def get_linked_pages_batch(wikidata_ids, strprops='sitelinks', strlanguages='en|fr'):
+    """Resolve up to 50 Wikidata ids in a single ``wbgetentities`` call.
+
+    ``wbgetentities`` accepts up to 50 ids and multiple languages at once, so one
+    batched call replaces the previous one-call-per-(entity, language). Pass the
+    languages pipe-joined (e.g. ``"en|fr"``). Returns the parsed JSON (with the
+    ``entities`` map) or ``None`` on failure.
+    """
+    ids = list(wikidata_ids)
+    if not ids:
+        return {"entities": {}}
+    if len(ids) > 50:
+        raise ValueError("wbgetentities accepts at most 50 ids per call")
+    params = {
+        'action': 'wbgetentities',
+        'format': 'json',
+        'ids': '|'.join(ids),
+        'languages': strlanguages,
+        'maxlag': 5,
+    }
+    if strprops != '':
+        params['props'] = strprops
+    session = get_session()
+    try:
+        rate_limit()
+        response = session.get(WIKIDATA_API_URL, params=params, timeout=30)
+        if response.status_code == 200:
+            return response.json()
+        print(f"get_linked_pages_batch HTTP {response.status_code} for {len(ids)} ids")
+        return None
+    except (requests.exceptions.SSLError,
+            requests.exceptions.ConnectionError,
+            requests.exceptions.Timeout) as err:
+        print(f"get_linked_pages_batch transient error for {len(ids)} ids: {err}")
+        return None
+
+
+def extract_titles_and_text(html_content=None, soup=None):
+    """Turn rendered page HTML into ``[(section_title, section_text), ...]``.
+
+    Accepts either raw ``html_content`` or a pre-parsed ``soup``; passing an
+    already-built soup lets the caller parse the page HTML once and reuse it for
+    both section extraction and image captions (Phase 1b).
+    """
+    if soup is None:
+        soup = BeautifulSoup(html_content, 'html.parser')
     headers = soup.find_all('h2')
     result = []
     first_h2 = headers[0] if headers else None
