@@ -8,6 +8,8 @@ from html import unescape
 import requests
 from bs4 import BeautifulSoup
 
+from wikipedia_http import get_session, rate_limit
+
 strwikidataid = "Q8740"
 strwikidataid = "Q24815"
 strlang = "fr"
@@ -35,9 +37,10 @@ def get_wikipedia_title_from_wikidata_id(wikidata_id: str, lang: str) -> str:
         "format": "json",
         "ids": wikidata_id,
         "props": "sitelinks",
+        "maxlag": 5,
     }
-    headers = {"User-Agent": _get_user_agent()}
-    resp = requests.get(url, params=params, headers=headers, timeout=30)
+    rate_limit()
+    resp = get_session().get(url, params=params, timeout=30)
     resp.raise_for_status()
 
     data = resp.json()
@@ -67,8 +70,8 @@ def get_wikipedia_main_image_url(title: str, lang: str) -> str:
     """
     encoded = urllib.parse.quote(title.replace(" ", "_"), safe="")
     url = f"https://{lang}.wikipedia.org/api/rest_v1/page/summary/{encoded}"
-    headers = {"User-Agent": _get_user_agent()}
-    resp = requests.get(url, headers=headers, timeout=30)
+    rate_limit()
+    resp = get_session().get(url, timeout=30)
     resp.raise_for_status()
 
     data = resp.json()
@@ -131,7 +134,7 @@ def _get_wikipedia_page_media_items(title: str, lang: str) -> list[dict]:
     captions are filled in by ``get_wikipedia_page_images`` via HTML scraping.
     """
     api_url = f"https://{lang}.wikipedia.org/w/api.php"
-    headers = {"User-Agent": _get_user_agent()}
+    session = get_session()
 
     # Step 1: enumerate every File: title embedded on the page (paginated).
     file_titles: list[str] = []
@@ -142,9 +145,11 @@ def _get_wikipedia_page_media_items(title: str, lang: str) -> list[dict]:
         "prop": "images",
         "imlimit": "max",
         "redirects": 1,
+        "maxlag": 5,
     }
     while True:
-        resp = requests.get(api_url, params=params, headers=headers, timeout=30)
+        rate_limit()
+        resp = session.get(api_url, params=params, timeout=30)
         if resp.status_code != 200:
             print(f"page images HTTP {resp.status_code} for {title} ({lang})")
             return []
@@ -179,8 +184,10 @@ def _get_wikipedia_page_media_items(title: str, lang: str) -> list[dict]:
             "prop": "imageinfo",
             "iiprop": "url|size|mime",
             "iiurlwidth": "320",
+            "maxlag": 5,
         }
-        resp = requests.get(api_url, params=info_params, headers=headers, timeout=30)
+        rate_limit()
+        resp = session.get(api_url, params=info_params, timeout=30)
         if resp.status_code != 200:
             print(f"imageinfo HTTP {resp.status_code} for {title} ({lang})")
             continue
@@ -220,9 +227,10 @@ def _get_parsed_page_soup(title: str, lang: str):
         "page": title,
         "prop": "text",
         "redirects": 1,
+        "maxlag": 5,
     }
-    headers = {"User-Agent": _get_user_agent()}
-    resp = requests.get(url, params=params, headers=headers, timeout=30)
+    rate_limit()
+    resp = get_session().get(url, params=params, timeout=30)
     if resp.status_code != 200:
         print(f"parse HTML HTTP {resp.status_code} for {title} ({lang})")
         return None
@@ -423,9 +431,10 @@ def _get_image_caption_from_api(filename: str, api_base: str, lang: str) -> str:
         "prop": "imageinfo",
         "iiprop": "extmetadata",
         "uselang": lang,
+        "maxlag": 5,
     }
-    headers = {"User-Agent": _get_user_agent()}
-    resp = requests.get(url, params=params, headers=headers, timeout=30)
+    rate_limit()
+    resp = get_session().get(url, params=params, timeout=30)
     resp.raise_for_status()
     data = resp.json()
 
@@ -472,16 +481,21 @@ def get_main_image_caption_for_page(title: str, image_url: str, lang: str) -> st
 
     return get_main_image_caption(image_url, lang)
 
-def get_wikipedia_page_images(title: str, lang: str) -> list[dict]:
+def get_wikipedia_page_images(title: str, lang: str, soup=None) -> list[dict]:
     """Return all image items available for a Wikipedia page.
 
     Each returned dict is normalized for crawler/database usage and may include:
     ``display_order``, ``image_url``, ``image_url_normalized``, ``thumbnail_url``,
     ``media_type``, ``file_name``, ``commons_title``, and ``caption``.
+
+    If ``soup`` (the page's already-parsed rendered HTML) is supplied, it is reused
+    for caption extraction instead of fetching the page HTML again (Phase 1b). When
+    ``soup`` is ``None`` the HTML is fetched here, preserving the original behavior.
     """
     arrimages = []
     items = _get_wikipedia_page_media_items(title, lang)
-    soup = _get_parsed_page_soup(title, lang) if items else None
+    if soup is None:
+        soup = _get_parsed_page_soup(title, lang) if items else None
 
     for item in items:
         if not isinstance(item, dict) or item.get("type") != "image":
@@ -545,9 +559,10 @@ def get_thumbnail_url_for_width(image_url: str, target_width: int) -> tuple[str,
         "prop": "imageinfo",
         "iiprop": "url|size",
         "iiurlwidth": str(target_width),
+        "maxlag": 5,
     }
-    headers = {"User-Agent": _get_user_agent()}
-    resp = requests.get(url, params=params, headers=headers, timeout=30)
+    rate_limit()
+    resp = get_session().get(url, params=params, timeout=30)
     if resp.status_code != 200:
         return (image_url, None, None)
 
@@ -584,9 +599,10 @@ def get_original_image_info(image_url: str) -> tuple[int | None, int | None, str
         "titles": f"File:{filename}",
         "prop": "imageinfo",
         "iiprop": "url|size",
+        "maxlag": 5,
     }
-    headers = {"User-Agent": _get_user_agent()}
-    resp = requests.get(url, params=params, headers=headers, timeout=30)
+    rate_limit()
+    resp = get_session().get(url, params=params, timeout=30)
     if resp.status_code != 200:
         return (None, None, None)
     data = resp.json()

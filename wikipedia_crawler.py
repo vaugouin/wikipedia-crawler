@@ -2,13 +2,20 @@ import requests
 import json
 import os
 import urllib.parse
+from concurrent.futures import ThreadPoolExecutor
 from dotenv import load_dotenv
 import time
 import pymysql.cursors
 import citizenphil as cp
 from datetime import datetime
+from bs4 import BeautifulSoup
 import wikipedia_images as wimg
-from wikipedia_crawler_helpers import extract_titles_and_text, get_linked_pages
+from wikipedia_crawler_helpers import (
+    extract_titles_and_text,
+    get_linked_pages,
+    get_linked_pages_batch,
+)
+from wikipedia_http import get_session, get_worker_count, rate_limit
 #import re
 
 # Load .env file 
@@ -21,6 +28,257 @@ headers = {
 }
 
 cwd = os.getcwd()
+
+
+def f_fetchlangpayload(session, wikidata_id, page_title, strkey, strlanguage, needs_image):
+    """Fetch all network/parse data for one (entity, language) Wikipedia page.
+
+    Runs inside a worker thread (Phase 1d): performs ONLY network requests and HTML
+    parsing, then returns a plain dict. It does NO database work — PyMySQL's single
+    shared connection is not thread-safe — so the caller writes the returned payload
+    to the database on the main thread via ``f_writelangtodb``.
+
+    The rendered page HTML is fetched once and reused for both section extraction and
+    image captions (Phase 1b).
+    """
+    strwikipediapageurl = (
+        f"https://{strlanguage}.wikipedia.org/wiki/"
+        f"{urllib.parse.quote(page_title.replace(' ', '_'))}"
+    )
+    payload = {
+        "site_key": strkey,
+        "page_title": page_title,
+        "page_url": strwikipediapageurl,
+        "main_image_url": "",
+        "page_images": [],
+        "http_status": None,
+        "success": False,
+        "has_content": False,
+        "sections": [],
+    }
+
+    # Lead/main image — only for content types that store one.
+    if needs_image:
+        try:
+            strmainimageurl = wimg.get_wikipedia_main_image_url(page_title, strlanguage)
+            if strmainimageurl:
+                payload["main_image_url"] = strmainimageurl
+        except Exception as err:
+            print(f"Main image retrieval error for {wikidata_id} ({strlanguage}): {err}")
+
+    # Rendered HTML, fetched once and reused below (sections + image captions).
+    url = f'https://{strlanguage}.wikipedia.org/w/api.php'
+    params = {
+        'action': 'parse',
+        'page': page_title,
+        'prop': 'text',
+        'formatversion': 2,
+        'format': 'json',
+        'maxlag': 5,
+    }
+    intsuccess = False
+    inthttpstatus = None
+    response = None
+    try:
+        rate_limit()
+        response = session.get(url, params=params, timeout=30)
+        inthttpstatus = response.status_code
+        intsuccess = (inthttpstatus == 200)
+        if not intsuccess:
+            print(f'parse API HTTP {inthttpstatus} for {page_title} ({strlanguage})')
+    except requests.exceptions.HTTPError as http_err:
+        print(f'HTTP error occurred: {http_err}')  # Handle specific HTTP errors
+    except requests.exceptions.ConnectionError as conn_err:
+        print(f'Connection error occurred: {conn_err}')  # Handle connection errors
+    except requests.exceptions.Timeout as timeout_err:
+        print(f'Timeout error occurred: {timeout_err}')  # Handle timeout errors
+    except requests.exceptions.RequestException as req_err:
+        print(f'Request error occurred: {req_err}')  # Handle other request-related errors
+    except Exception as err:
+        print(f'An error occurred: {err}')  # Handle any other exceptions
+    payload["http_status"] = inthttpstatus
+    payload["success"] = intsuccess
+
+    data = None
+    if intsuccess:
+        try:
+            data = response.json()
+        except ValueError as json_err:
+            print(f'parse API JSON decode error for {page_title} ({strlanguage}): {json_err}')
+            data = None
+
+    soup = None
+    if intsuccess and data is not None:
+        wikipedia_page_content = data['parse']['text']
+        if wikipedia_page_content:
+            payload["has_content"] = True
+            wikipedia_page_content = "<body>" + wikipedia_page_content + "</body>"
+            soup = BeautifulSoup(wikipedia_page_content, 'html.parser')
+            payload["sections"] = extract_titles_and_text(soup=soup)
+
+    # All page images. The image list comes from the query API; captions reuse the
+    # soup above when available, otherwise fall back to the function's own fetch.
+    try:
+        if soup is not None:
+            payload["page_images"] = wimg.get_wikipedia_page_images(page_title, strlanguage, soup=soup)
+        else:
+            payload["page_images"] = wimg.get_wikipedia_page_images(page_title, strlanguage)
+    except Exception as err:
+        print(f"All page images retrieval error for {wikidata_id} ({strlanguage}): {err}")
+        payload["page_images"] = []
+
+    return payload
+
+
+def f_writelangtodb(payload, lngid, wikidata_id, strlanguage, strcontent, intindex,
+                    strimagetable, strimagecolumn, cursor2, lngencount, lngfrcount):
+    """Persist one (entity, language) payload produced by ``f_fetchlangpayload``.
+
+    Runs on the main thread only (single shared PyMySQL connection). Mirrors the
+    original per-row database writes; returns the updated (lngencount, lngfrcount)
+    English/French page counters.
+    """
+    strkey = payload["site_key"]
+    page_title = payload["page_title"]
+    strwikipediapageurl = payload["page_url"]
+    strmainimageurl = payload["main_image_url"]
+
+    arrcouples = {}
+    arrcouples["ID_WIKIDATA"] = wikidata_id
+    arrcouples["LANG"] = strlanguage
+    arrcouples["ITEM_TYPE"] = strcontent
+    arrcouples["WIKIPEDIA_SITE_KEY"] = strkey
+    arrcouples["WIKIPEDIA_PAGE_TITLE"] = page_title
+    arrcouples["WIKIPEDIA_PAGE_URL"] = strwikipediapageurl
+    arrcouples["PAGE_EXISTS"] = 1
+    strsqltablename = "T_WC_WIKIPEDIA_PAGE_LANG"
+    strsqlupdatecondition = f"ID_WIKIDATA = '{wikidata_id}' AND LANG = '{strlanguage}'"
+    cp.f_sqlupdatearray(strsqltablename, arrcouples, strsqlupdatecondition, 1)
+
+    if not page_title:
+        return lngencount, lngfrcount
+
+    # Main image row (when this content type stores one).
+    if strimagetable != "" and strimagecolumn != "":
+        if strmainimageurl:
+            print("Found an image:", strmainimageurl)
+            arrcouples = {}
+            arrcouples["ID_WIKIDATA"] = wikidata_id
+            arrcouples[strimagecolumn] = strmainimageurl
+            strsqlupdatecondition = f"ID_WIKIDATA = '{wikidata_id}'"
+            cp.f_sqlupdatearray(strimagetable, arrcouples, strsqlupdatecondition, 1)
+
+    try:
+        arrpageimages = payload["page_images"]
+        if not strmainimageurl and strimagetable != "" and strimagecolumn != "" and len(arrpageimages) > 0:
+            strmainimageurl = arrpageimages[0].get("image_url") or ""
+            if strmainimageurl:
+                print("Main image fallback (first page image):", strmainimageurl)
+                arrcouples = {}
+                arrcouples["ID_WIKIDATA"] = wikidata_id
+                arrcouples[strimagecolumn] = strmainimageurl
+                strsqlupdatecondition = f"ID_WIKIDATA = '{wikidata_id}'"
+                cp.f_sqlupdatearray(strimagetable, arrcouples, strsqlupdatecondition, 1)
+        for imageitem in arrpageimages:
+            arrcouples = {}
+            arrcouples["ID_WIKIDATA"] = wikidata_id
+            arrcouples["LANG"] = strlanguage
+            arrcouples["ITEM_TYPE"] = strcontent
+            arrcouples["DISPLAY_ORDER"] = imageitem.get("display_order")
+            arrcouples["IMAGE_URL"] = imageitem.get("image_url")
+            arrcouples["IMAGE_URL_NORMALIZED"] = imageitem.get("image_url_normalized")
+            arrcouples["THUMBNAIL_URL"] = imageitem.get("thumbnail_url")
+            arrcouples["MEDIA_TYPE"] = imageitem.get("media_type")
+            arrcouples["FILE_NAME"] = imageitem.get("file_name")
+            arrcouples["COMMONS_TITLE"] = imageitem.get("commons_title")
+            arrcouples["CAPTION"] = imageitem.get("caption")
+            arrcouples["IS_MAIN_IMAGE"] = 1 if imageitem.get("image_url") == strmainimageurl else 0
+            strsqltablename = "T_WC_WIKIPEDIA_PAGE_LANG_IMAGE"
+            strsqlupdatecondition = f"ID_WIKIDATA = '{wikidata_id}' AND LANG = '{strlanguage}' AND DISPLAY_ORDER = {imageitem.get('display_order')}"
+            cp.f_sqlupdatearray(strsqltablename, arrcouples, strsqlupdatecondition, 1)
+        if len(arrpageimages) > 0:
+            strsqldelete = f"DELETE FROM T_WC_WIKIPEDIA_PAGE_LANG_IMAGE WHERE ID_WIKIDATA = '{wikidata_id}' AND LANG = '{strlanguage}' AND DISPLAY_ORDER > {len(arrpageimages)}"
+        else:
+            strsqldelete = f"DELETE FROM T_WC_WIKIPEDIA_PAGE_LANG_IMAGE WHERE ID_WIKIDATA = '{wikidata_id}' AND LANG = '{strlanguage}'"
+        cursor2.execute(strsqldelete)
+        cp.connectioncp.commit()
+    except Exception as err:
+        print(f"All page images persistence error for {wikidata_id} ({strlanguage}): {err}")
+
+    # Crawl-status columns (recorded whether or not the parse succeeded).
+    arrcouples = {}
+    arrcouples["LAST_CRAWLED_AT"] = datetime.now(cp.paris_tz).strftime("%Y-%m-%d %H:%M:%S")
+    arrcouples["HTTP_STATUS"] = payload["http_status"]
+    if payload["success"]:
+        arrcouples["LAST_SUCCESS_AT"] = datetime.now(cp.paris_tz).strftime("%Y-%m-%d %H:%M:%S")
+    strsqltablename = "T_WC_WIKIPEDIA_PAGE_LANG"
+    strsqlupdatecondition = f"ID_WIKIDATA = '{wikidata_id}' AND LANG = '{strlanguage}'"
+    cp.f_sqlupdatearray(strsqltablename, arrcouples, strsqlupdatecondition, 1)
+
+    if payload["success"] and payload["has_content"]:
+        if strlanguage == "en":
+            lngencount += 1
+            cp.f_setservervariable("strwikipediacrawler"+strcontent+"englishcount",str(lngencount),"Count of Wikipedia English pages retrieved for "+strcontent,0)
+        if strlanguage == "fr":
+            lngfrcount += 1
+            cp.f_setservervariable("strwikipediacrawler"+strcontent+"frenchcount",str(lngfrcount),"Count of Wikipedia French pages retrieved for "+strcontent,0)
+        arrcontent = payload["sections"]
+        lngdisplayorder = 0
+        for i, (strsectiontitle, strsectioncontent) in enumerate(arrcontent):
+            print(f"{i}. Title: {strsectiontitle}")
+            strsectioncontent = strsectioncontent.replace("[edit]","")
+            if len(strsectiontitle) > 300:
+                strsectiontitle = strsectiontitle[:300]
+            lngdisplayorder += 1
+            arrcouples = {}
+            arrcouples["ID_WIKIDATA"] = wikidata_id
+            arrcouples["LANG"] = strlanguage
+            arrcouples["ITEM_TYPE"] = strcontent
+            arrcouples["DISPLAY_ORDER"] = lngdisplayorder
+            arrcouples["TITLE"] = strsectiontitle
+            arrcouples["CONTENT"] = strsectioncontent
+            strsqltablename = "T_WC_WIKIPEDIA_PAGE_LANG_SECTION"
+            strsqlupdatecondition = f"ID_WIKIDATA = '{wikidata_id}' AND LANG = '{strlanguage}' AND DISPLAY_ORDER = {lngdisplayorder}"
+            cp.f_sqlupdatearray(strsqltablename,arrcouples,strsqlupdatecondition,1)
+            strsqldelete = f"DELETE FROM {strsqltablename} WHERE ID_WIKIDATA = '{wikidata_id}' AND LANG = '{strlanguage}' AND DISPLAY_ORDER > {lngdisplayorder}"
+            cursor2.execute(strsqldelete)
+            cp.connectioncp.commit()
+
+            # Extract Format data from movie, fr, Fiche Technique section
+            if intindex == 201:
+                # This is a movie, so we have extra processing because the French Wikipedia page holds technical data about the movie
+                if strlanguage == "fr":
+                    # In French
+                    if strsectiontitle == "Fiche technique":
+                        # Fiche technique
+                        strstringbegin = "\n- Format"
+                        strstringend = "\n- "
+                        strformatline = ""
+                        lngbeginindex = strsectioncontent.find(strstringbegin)
+                        if lngbeginindex == -1:
+                            strstringbegin = "- Format"
+                            lngbeginindex = strsectioncontent.find(strstringbegin)
+                        if lngbeginindex != -1:
+                            # Begin string found
+                            lngbeginindex += len(strstringbegin)
+                            lngendindex = strsectioncontent.find(strstringend, lngbeginindex)
+                            if lngendindex != -1:
+                                strformatline = strsectioncontent[lngbeginindex:lngendindex].strip()
+                            else:
+                                strformatline = strsectioncontent[lngbeginindex:].strip()
+                        if strformatline != "":
+                            if strformatline[0:2] == ": ":
+                                strformatline = strformatline[2:]
+                        print("Format :",strformatline)
+                        arrcouples = {}
+                        arrcouples["WIKIPEDIA_FORMAT_LINE"] = strformatline
+                        arrcouples["DAT_WIKIPEDIA_FORMAT_LINE"] = datetime.now(cp.paris_tz).strftime("%Y-%m-%d %H:%M:%S")
+                        strsqltablename = "T_WC_TMDB_MOVIE"
+                        strsqlupdatecondition = f"ID_MOVIE = {lngid}"
+                        cp.f_sqlupdatearray(strsqltablename,arrcouples,strsqlupdatecondition,1)
+
+    return lngencount, lngfrcount
+
 
 # Quick-mode container: runs ONLY a fixed subset of processes and skips writes
 # to shared resume-state server variables so the main wikipedia-crawler
@@ -783,213 +1041,59 @@ try:
                     lngencount = 0
                     # Fetching all rows from the last executed statement
                     results = cursor.fetchall()
-                    # Iterating through the results and printing
-                    for row in results:
-                        # print("------------------------------------------")
-                        lngid = row['id']
-                        wikidata_id = row['ID_WIKIDATA']
-                        print(f"TMDb {strcontent} id {lngid} Wikidata id: {wikidata_id} ")
-                        arrlang = {1: 'en', 2:'fr'}
-                        for intlang, strlanguage in arrlang.items():
-                            page_content = get_linked_pages(wikidata_id, strprops, strlanguage)
-                            if page_content:
-                                print(page_content)
-                                if 'entities' in page_content:
-                                    if wikidata_id in page_content['entities']:
-                                        if strprops in page_content['entities'][wikidata_id]:
-                                            strkey = strlanguage + 'wiki'
-                                            if strkey in page_content['entities'][wikidata_id][strprops]:
-                                                page_title = page_content['entities'][wikidata_id][strprops][strkey]['title']
-                                                print(f"{strlanguage}: {page_title}")
-                                                strwikipediapageurl = f"https://{strlanguage}.wikipedia.org/wiki/{urllib.parse.quote(page_title.replace(' ', '_'))}"
-                                                strmainimageurl = ""
-                                                arrcouples = {}
-                                                arrcouples["ID_WIKIDATA"] = wikidata_id
-                                                arrcouples["LANG"] = strlanguage
-                                                arrcouples["ITEM_TYPE"] = strcontent
-                                                arrcouples["WIKIPEDIA_SITE_KEY"] = strkey
-                                                arrcouples["WIKIPEDIA_PAGE_TITLE"] = page_title
-                                                arrcouples["WIKIPEDIA_PAGE_URL"] = strwikipediapageurl
-                                                arrcouples["PAGE_EXISTS"] = 1
-                                                strsqltablename = "T_WC_WIKIPEDIA_PAGE_LANG"
-                                                strsqlupdatecondition = f"ID_WIKIDATA = '{wikidata_id}' AND LANG = '{strlanguage}'"
-                                                cp.f_sqlupdatearray(strsqltablename,arrcouples,strsqlupdatecondition,1)
-                                                #print("Now retrieving the image for this content")
-                                                if page_title:
-                                                    if strimagetable != "" and strimagecolumn != "":
-                                                        try:
-                                                            strmainimageurl = wimg.get_wikipedia_main_image_url(page_title, strlanguage)
-                                                            if strmainimageurl:
-                                                                print("Found an image:", strmainimageurl)
-                                                                arrcouples = {}
-                                                                arrcouples["ID_WIKIDATA"] = wikidata_id
-                                                                arrcouples[strimagecolumn] = strmainimageurl
-                                                                strsqlupdatecondition = f"ID_WIKIDATA = '{wikidata_id}'"
-                                                                cp.f_sqlupdatearray(strimagetable, arrcouples, strsqlupdatecondition, 1)
-                                                            #else:
-                                                            #    print("No image found")
-                                                        except Exception as err:
-                                                            print(f"Main image retrieval error for {wikidata_id} ({strlanguage}): {err}")
-                                                    try:
-                                                        arrpageimages = wimg.get_wikipedia_page_images(page_title, strlanguage)
-                                                        if not strmainimageurl and strimagetable != "" and strimagecolumn != "" and len(arrpageimages) > 0:
-                                                            strmainimageurl = arrpageimages[0].get("image_url") or ""
-                                                            if strmainimageurl:
-                                                                print("Main image fallback (first page image):", strmainimageurl)
-                                                                arrcouples = {}
-                                                                arrcouples["ID_WIKIDATA"] = wikidata_id
-                                                                arrcouples[strimagecolumn] = strmainimageurl
-                                                                strsqlupdatecondition = f"ID_WIKIDATA = '{wikidata_id}'"
-                                                                cp.f_sqlupdatearray(strimagetable, arrcouples, strsqlupdatecondition, 1)
-                                                        for imageitem in arrpageimages:
-                                                            arrcouples = {}
-                                                            arrcouples["ID_WIKIDATA"] = wikidata_id
-                                                            arrcouples["LANG"] = strlanguage
-                                                            arrcouples["ITEM_TYPE"] = strcontent
-                                                            arrcouples["DISPLAY_ORDER"] = imageitem.get("display_order")
-                                                            arrcouples["IMAGE_URL"] = imageitem.get("image_url")
-                                                            arrcouples["IMAGE_URL_NORMALIZED"] = imageitem.get("image_url_normalized")
-                                                            arrcouples["THUMBNAIL_URL"] = imageitem.get("thumbnail_url")
-                                                            arrcouples["MEDIA_TYPE"] = imageitem.get("media_type")
-                                                            arrcouples["FILE_NAME"] = imageitem.get("file_name")
-                                                            arrcouples["COMMONS_TITLE"] = imageitem.get("commons_title")
-                                                            arrcouples["CAPTION"] = imageitem.get("caption")
-                                                            arrcouples["IS_MAIN_IMAGE"] = 1 if imageitem.get("image_url") == strmainimageurl else 0
-                                                            strsqltablename = "T_WC_WIKIPEDIA_PAGE_LANG_IMAGE"
-                                                            strsqlupdatecondition = f"ID_WIKIDATA = '{wikidata_id}' AND LANG = '{strlanguage}' AND DISPLAY_ORDER = {imageitem.get('display_order')}"
-                                                            cp.f_sqlupdatearray(strsqltablename,arrcouples,strsqlupdatecondition,1)
-                                                        if len(arrpageimages) > 0:
-                                                            strsqldelete = f"DELETE FROM T_WC_WIKIPEDIA_PAGE_LANG_IMAGE WHERE ID_WIKIDATA = '{wikidata_id}' AND LANG = '{strlanguage}' AND DISPLAY_ORDER > {len(arrpageimages)}"
-                                                        else:
-                                                            strsqldelete = f"DELETE FROM T_WC_WIKIPEDIA_PAGE_LANG_IMAGE WHERE ID_WIKIDATA = '{wikidata_id}' AND LANG = '{strlanguage}'"
-                                                        cursor2.execute(strsqldelete)
-                                                        cp.connectioncp.commit()
-                                                    except Exception as err:
-                                                        print(f"All page images retrieval error for {wikidata_id} ({strlanguage}): {err}")
-                                                    url = f'https://{strlanguage}.wikipedia.org/w/api.php'
-                                                    params = {
-                                                        'action': 'parse',
-                                                        'page': page_title,
-                                                        'prop': 'text',
-                                                        'formatversion': 2,
-                                                        'format': 'json'
-                                                    }
-                                                    # By default we assume no success
-                                                    intsuccess = False
-                                                    inthttpstatus = None
-                                                    #print(url)
-                                                    try:
-                                                        response = requests.get(url, params=params, headers=headers)
-                                                        inthttpstatus = response.status_code
-                                                        intsuccess = True
-                                                    except requests.exceptions.HTTPError as http_err:
-                                                        print(f'HTTP error occurred: {http_err}')  # Handle specific HTTP errors
-                                                    except requests.exceptions.ConnectionError as conn_err:
-                                                        print(f'Connection error occurred: {conn_err}')  # Handle connection errors
-                                                    except requests.exceptions.Timeout as timeout_err:
-                                                        print(f'Timeout error occurred: {timeout_err}')  # Handle timeout errors
-                                                    except requests.exceptions.RequestException as req_err:
-                                                        print(f'Request error occurred: {req_err}')  # Handle other request-related errors
-                                                    except Exception as err:
-                                                        print(f'An error occurred: {err}')  # Handle any other exceptions
-                                                    arrcouples = {}
-                                                    arrcouples["LAST_CRAWLED_AT"] = datetime.now(cp.paris_tz).strftime("%Y-%m-%d %H:%M:%S")
-                                                    arrcouples["HTTP_STATUS"] = inthttpstatus
-                                                    if intsuccess:
-                                                        arrcouples["LAST_SUCCESS_AT"] = datetime.now(cp.paris_tz).strftime("%Y-%m-%d %H:%M:%S")
-                                                    strsqltablename = "T_WC_WIKIPEDIA_PAGE_LANG"
-                                                    strsqlupdatecondition = f"ID_WIKIDATA = '{wikidata_id}' AND LANG = '{strlanguage}'"
-                                                    cp.f_sqlupdatearray(strsqltablename,arrcouples,strsqlupdatecondition,1)
-                                                    if intsuccess:
-                                                        data = response.json()
-                                                        """
-                                                        strjsonfilename = wikidata_id + '-' + strlanguage + '-data.json'
-                                                        file_path = os.path.join(cwd, strjsonfilename)
-                                                        with open(file_path, 'w') as file:
-                                                            file.write(json.dumps(data, ensure_ascii=False))
-                                                        print(f'File created: {file_path}')
-                                                        """
-                                                        wikipedia_page_content = data['parse']['text']
-                                                        if wikipedia_page_content:
-                                                            # print(wikipedia_page_content)
-                                                            """
-                                                            strpagetitle = page_title.replace(" ","_")
-                                                            strfilename = strcontent + "/" + strlanguage + "/" + wikidata_id + '.html'
-                                                            file_path = os.path.join(cwd, strfilename)
-                                                            with open(file_path, 'w') as file:
-                                                                file.write(wikipedia_page_content)
-                                                            #print(f'File created: {file_path}')
-                                                            """
-                                                            if strlanguage == "en":
-                                                                lngencount += 1
-                                                                cp.f_setservervariable("strwikipediacrawler"+strcontent+"englishcount",str(lngencount),"Count of Wikipedia English pages retrieved for "+strcontent,0)
-                                                            if strlanguage == "fr":
-                                                                lngfrcount += 1
-                                                                cp.f_setservervariable("strwikipediacrawler"+strcontent+"frenchcount",str(lngfrcount),"Count of Wikipedia French pages retrieved for "+strcontent,0)
-                                                            wikipedia_page_content = "<body>" + wikipedia_page_content + "</body>"
-                                                            arrcontent = extract_titles_and_text(wikipedia_page_content)
-                                                            #print(arrcontent)
-                                                            lngdisplayorder = 0
-                                                            for i, (strsectiontitle, strsectioncontent) in enumerate(arrcontent):
-                                                                print(f"{i}. Title: {strsectiontitle}")
-                                                                strsectioncontent = strsectioncontent.replace("[edit]","")
-                                                                if len(strsectiontitle) > 300:
-                                                                    strsectiontitle = strsectiontitle[:300]
-                                                                #print(f"   Text: {strsectioncontent}\n")
-                                                                lngdisplayorder += 1
-                                                                arrcouples = {}
-                                                                arrcouples["ID_WIKIDATA"] = wikidata_id
-                                                                arrcouples["LANG"] = strlanguage
-                                                                arrcouples["ITEM_TYPE"] = strcontent
-                                                                arrcouples["DISPLAY_ORDER"] = lngdisplayorder
-                                                                arrcouples["TITLE"] = strsectiontitle
-                                                                arrcouples["CONTENT"] = strsectioncontent
-                                                                strsqltablename = "T_WC_WIKIPEDIA_PAGE_LANG_SECTION"
-                                                                strsqlupdatecondition = f"ID_WIKIDATA = '{wikidata_id}' AND LANG = '{strlanguage}' AND DISPLAY_ORDER = {lngdisplayorder}"
-                                                                cp.f_sqlupdatearray(strsqltablename,arrcouples,strsqlupdatecondition,1)
-                                                                strsqldelete = f"DELETE FROM {strsqltablename} WHERE ID_WIKIDATA = '{wikidata_id}' AND LANG = '{strlanguage}' AND DISPLAY_ORDER > {lngdisplayorder}"
-                                                                # print(f"{strsqldelete}")
-                                                                cursor2.execute(strsqldelete)
-                                                                cp.connectioncp.commit()
-                                                                
-                                                                # Extract Format data from movie, fr, Fiche Technique section
-                                                                if intindex == 201:
-                                                                    # This is a movie, so we have extra processing because the French Wikipedia page holds technical data about the movie
-                                                                    if strlanguage == "fr":
-                                                                        # In French
-                                                                        if strsectiontitle == "Fiche technique":
-                                                                            # Fiche technique
-                                                                            strstringbegin = "\n- Format"
-                                                                            strstringend = "\n- "
-                                                                            strformatline = ""
-                                                                            lngbeginindex = strsectioncontent.find(strstringbegin)
-                                                                            if lngbeginindex == -1:
-                                                                                strstringbegin = "- Format"
-                                                                                lngbeginindex = strsectioncontent.find(strstringbegin)
-                                                                            if lngbeginindex != -1:
-                                                                                # Begin string found
-                                                                                lngbeginindex += len(strstringbegin)
-                                                                                lngendindex = strsectioncontent.find(strstringend, lngbeginindex)
-                                                                                if lngendindex != -1:
-                                                                                    strformatline = strsectioncontent[lngbeginindex:lngendindex].strip()
-                                                                                else:
-                                                                                    strformatline = strsectioncontent[lngbeginindex:].strip()
-                                                                            if strformatline != "":
-                                                                                if strformatline[0:2] == ": ":
-                                                                                    strformatline = strformatline[2:]
-                                                                            print("Format :",strformatline)
-                                                                            arrcouples = {}
-                                                                            arrcouples["WIKIPEDIA_FORMAT_LINE"] = strformatline
-                                                                            arrcouples["DAT_WIKIPEDIA_FORMAT_LINE"] = datetime.now(cp.paris_tz).strftime("%Y-%m-%d %H:%M:%S")
-                                                                            strsqltablename = "T_WC_TMDB_MOVIE"
-                                                                            strsqlupdatecondition = f"ID_MOVIE = {lngid}"
-                                                                            cp.f_sqlupdatearray(strsqltablename,arrcouples,strsqlupdatecondition,1)
-                                                        # print(wikipedia_page_content)
-                                                else:
-                                                    print(f'No Wikipedia page found for {strcontent} id {wikidata_id} and language code {strlanguage}')
-                        #cp.f_tmdbmoviesetwikipediacompleted(lngid)
-                        cp.f_setservervariable("strwikipediacrawler"+strcontent+"wikidataid",wikidata_id,"Current wikidata id in the Wikipedia crawler for "+strcontent,0)
-                        cp.f_setservervariable("strwikipediacrawler"+strcontent+"id",str(lngid),"Current id in the Wikipedia crawler for "+strcontent,0)
+                    arrrows = list(results)
+                    arrlang = {1: 'en', 2: 'fr'}
+                    needs_image = (strimagetable != "" and strimagecolumn != "")
+                    session = get_session()
+                    intworkers = get_worker_count()
+                    # Phase 1c/1d: resolve up to 50 titles (en|fr) per Wikidata call,
+                    # fetch each (entity, language) page concurrently, then write every
+                    # result to the DB here on the main thread (single shared connection).
+                    with ThreadPoolExecutor(max_workers=intworkers) as executor:
+                        for intchunkstart in range(0, len(arrrows), 50):
+                            arrchunk = arrrows[intchunkstart:intchunkstart + 50]
+                            arrids = [row['ID_WIKIDATA'] for row in arrchunk]
+                            batch = get_linked_pages_batch(arrids, strprops, 'en|fr')
+                            arrentities = batch.get('entities', {}) if isinstance(batch, dict) else {}
+                            # Submit a fetch task per (row, language) with a resolvable title.
+                            arrrowtasks = []
+                            for row in arrchunk:
+                                wikidata_id = row['ID_WIKIDATA']
+                                entity = arrentities.get(wikidata_id) or {}
+                                sitelinks = (entity.get(strprops) or {}) if strprops else {}
+                                arrtasks = []
+                                for intlang, strlanguage in arrlang.items():
+                                    strkey = strlanguage + 'wiki'
+                                    blnpresent = strkey in sitelinks
+                                    page_title = (sitelinks.get(strkey) or {}).get('title') if blnpresent else None
+                                    if page_title:
+                                        future = executor.submit(
+                                            f_fetchlangpayload, session, wikidata_id,
+                                            page_title, strkey, strlanguage, needs_image,
+                                        )
+                                    else:
+                                        future = None
+                                    arrtasks.append((strlanguage, blnpresent, future))
+                                arrrowtasks.append((row, arrtasks))
+                            # Drain in submission order; all DB writes stay on this thread.
+                            for row, arrtasks in arrrowtasks:
+                                lngid = row['id']
+                                wikidata_id = row['ID_WIKIDATA']
+                                print(f"TMDb {strcontent} id {lngid} Wikidata id: {wikidata_id} ")
+                                for strlanguage, blnpresent, future in arrtasks:
+                                    if future is None:
+                                        if blnpresent:
+                                            print(f'No Wikipedia page found for {strcontent} id {wikidata_id} and language code {strlanguage}')
+                                        continue
+                                    payload = future.result()
+                                    lngencount, lngfrcount = f_writelangtodb(
+                                        payload, lngid, wikidata_id, strlanguage, strcontent,
+                                        intindex, strimagetable, strimagecolumn, cursor2,
+                                        lngencount, lngfrcount,
+                                    )
+                                #cp.f_tmdbmoviesetwikipediacompleted(lngid)
+                                cp.f_setservervariable("strwikipediacrawler"+strcontent+"wikidataid",wikidata_id,"Current wikidata id in the Wikipedia crawler for "+strcontent,0)
+                                cp.f_setservervariable("strwikipediacrawler"+strcontent+"id",str(lngid),"Current id in the Wikipedia crawler for "+strcontent,0)
                         
                     strnow = datetime.now(cp.paris_tz).strftime("%Y-%m-%d %H:%M:%S")
                     cp.f_setservervariable("strwikipediacrawler"+strcontent+"enddatetime",strnow,"Date and time of the last end of the Wikipedia crawler for "+strcontent,0)

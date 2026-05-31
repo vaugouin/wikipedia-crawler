@@ -84,6 +84,7 @@ def f_getconnection():
             password=strdbpassword,
             database=strdbname,
             cursorclass=pymysql.cursors.DictCursor,
+            local_infile=True,
         )
     return connectioncp
 
