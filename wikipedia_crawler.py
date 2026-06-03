@@ -179,28 +179,36 @@ def f_writelangtodb(payload, lngid, wikidata_id, strlanguage, strcontent, intind
                 arrcouples[strimagecolumn] = strmainimageurl
                 strsqlupdatecondition = f"ID_WIKIDATA = '{wikidata_id}'"
                 cp.f_sqlupdatearray(strimagetable, arrcouples, strsqlupdatecondition, 1)
+        # In-place bulk upsert keyed by the (ID_WIKIDATA, LANG, DISPLAY_ORDER)
+        # unique index (added by migrations/add_unique_section_image_keys.py),
+        # then prune any stale tail rows beyond the current image count. The
+        # upsert refreshes existing rows in place and PRESERVES their DAT_CREAT
+        # (creation fields are insert-only -- see citizenphil module docs).
+        arrimagerows = []
         for imageitem in arrpageimages:
-            arrcouples = {}
-            arrcouples["ID_WIKIDATA"] = wikidata_id
-            arrcouples["LANG"] = strlanguage
-            arrcouples["ITEM_TYPE"] = strcontent
-            arrcouples["DISPLAY_ORDER"] = imageitem.get("display_order")
-            arrcouples["IMAGE_URL"] = imageitem.get("image_url")
-            arrcouples["IMAGE_URL_NORMALIZED"] = imageitem.get("image_url_normalized")
-            arrcouples["THUMBNAIL_URL"] = imageitem.get("thumbnail_url")
-            arrcouples["MEDIA_TYPE"] = imageitem.get("media_type")
-            arrcouples["FILE_NAME"] = imageitem.get("file_name")
-            arrcouples["COMMONS_TITLE"] = imageitem.get("commons_title")
-            arrcouples["CAPTION"] = imageitem.get("caption")
-            arrcouples["IS_MAIN_IMAGE"] = 1 if imageitem.get("image_url") == strmainimageurl else 0
-            strsqltablename = "T_WC_WIKIPEDIA_PAGE_LANG_IMAGE"
-            strsqlupdatecondition = f"ID_WIKIDATA = '{wikidata_id}' AND LANG = '{strlanguage}' AND DISPLAY_ORDER = {imageitem.get('display_order')}"
-            cp.f_sqlupdatearray(strsqltablename, arrcouples, strsqlupdatecondition, 1)
-        if len(arrpageimages) > 0:
-            strsqldelete = f"DELETE FROM T_WC_WIKIPEDIA_PAGE_LANG_IMAGE WHERE ID_WIKIDATA = '{wikidata_id}' AND LANG = '{strlanguage}' AND DISPLAY_ORDER > {len(arrpageimages)}"
+            arrimagerows.append({
+                "ID_WIKIDATA": wikidata_id,
+                "LANG": strlanguage,
+                "ITEM_TYPE": strcontent,
+                "DISPLAY_ORDER": imageitem.get("display_order"),
+                "IMAGE_URL": imageitem.get("image_url"),
+                "IMAGE_URL_NORMALIZED": imageitem.get("image_url_normalized"),
+                "THUMBNAIL_URL": imageitem.get("thumbnail_url"),
+                "MEDIA_TYPE": imageitem.get("media_type"),
+                "FILE_NAME": imageitem.get("file_name"),
+                "COMMONS_TITLE": imageitem.get("commons_title"),
+                "CAPTION": imageitem.get("caption"),
+                "IS_MAIN_IMAGE": 1 if imageitem.get("image_url") == strmainimageurl else 0,
+            })
+        if arrimagerows:
+            cp.f_sqlbulkupsert("T_WC_WIKIPEDIA_PAGE_LANG_IMAGE", arrimagerows, ["ID_WIKIDATA", "LANG", "DISPLAY_ORDER"], 1)
+            cursor2.execute(
+                f"DELETE FROM T_WC_WIKIPEDIA_PAGE_LANG_IMAGE WHERE ID_WIKIDATA = '{wikidata_id}' AND LANG = '{strlanguage}' AND DISPLAY_ORDER > {len(arrimagerows)}"
+            )
         else:
-            strsqldelete = f"DELETE FROM T_WC_WIKIPEDIA_PAGE_LANG_IMAGE WHERE ID_WIKIDATA = '{wikidata_id}' AND LANG = '{strlanguage}'"
-        cursor2.execute(strsqldelete)
+            cursor2.execute(
+                f"DELETE FROM T_WC_WIKIPEDIA_PAGE_LANG_IMAGE WHERE ID_WIKIDATA = '{wikidata_id}' AND LANG = '{strlanguage}'"
+            )
         cp.connectioncp.commit()
     except Exception as err:
         print(f"All page images persistence error for {wikidata_id} ({strlanguage}): {err}")
@@ -223,6 +231,12 @@ def f_writelangtodb(payload, lngid, wikidata_id, strlanguage, strcontent, intind
             lngfrcount += 1
             cp.f_setservervariable("strwikipediacrawler"+strcontent+"frenchcount",str(lngfrcount),"Count of Wikipedia French pages retrieved for "+strcontent,0)
         arrcontent = payload["sections"]
+        # In-place bulk upsert keyed by the (ID_WIKIDATA, LANG, DISPLAY_ORDER)
+        # unique index (added by migrations/add_unique_section_image_keys.py),
+        # then prune any stale tail rows beyond the current section count. The
+        # upsert refreshes existing rows in place and PRESERVES their DAT_CREAT
+        # (creation fields are insert-only -- see citizenphil module docs).
+        arrsectionrows = []
         lngdisplayorder = 0
         for i, (strsectiontitle, strsectioncontent) in enumerate(arrcontent):
             print(f"{i}. Title: {strsectiontitle}")
@@ -230,19 +244,14 @@ def f_writelangtodb(payload, lngid, wikidata_id, strlanguage, strcontent, intind
             if len(strsectiontitle) > 300:
                 strsectiontitle = strsectiontitle[:300]
             lngdisplayorder += 1
-            arrcouples = {}
-            arrcouples["ID_WIKIDATA"] = wikidata_id
-            arrcouples["LANG"] = strlanguage
-            arrcouples["ITEM_TYPE"] = strcontent
-            arrcouples["DISPLAY_ORDER"] = lngdisplayorder
-            arrcouples["TITLE"] = strsectiontitle
-            arrcouples["CONTENT"] = strsectioncontent
-            strsqltablename = "T_WC_WIKIPEDIA_PAGE_LANG_SECTION"
-            strsqlupdatecondition = f"ID_WIKIDATA = '{wikidata_id}' AND LANG = '{strlanguage}' AND DISPLAY_ORDER = {lngdisplayorder}"
-            cp.f_sqlupdatearray(strsqltablename,arrcouples,strsqlupdatecondition,1)
-            strsqldelete = f"DELETE FROM {strsqltablename} WHERE ID_WIKIDATA = '{wikidata_id}' AND LANG = '{strlanguage}' AND DISPLAY_ORDER > {lngdisplayorder}"
-            cursor2.execute(strsqldelete)
-            cp.connectioncp.commit()
+            arrsectionrows.append({
+                "ID_WIKIDATA": wikidata_id,
+                "LANG": strlanguage,
+                "ITEM_TYPE": strcontent,
+                "DISPLAY_ORDER": lngdisplayorder,
+                "TITLE": strsectiontitle,
+                "CONTENT": strsectioncontent,
+            })
 
             # Extract Format data from movie, fr, Fiche Technique section
             if intindex == 201:
@@ -276,6 +285,17 @@ def f_writelangtodb(payload, lngid, wikidata_id, strlanguage, strcontent, intind
                         strsqltablename = "T_WC_TMDB_MOVIE"
                         strsqlupdatecondition = f"ID_MOVIE = {lngid}"
                         cp.f_sqlupdatearray(strsqltablename,arrcouples,strsqlupdatecondition,1)
+
+        if arrsectionrows:
+            cp.f_sqlbulkupsert("T_WC_WIKIPEDIA_PAGE_LANG_SECTION", arrsectionrows, ["ID_WIKIDATA", "LANG", "DISPLAY_ORDER"], 1)
+            cursor2.execute(
+                f"DELETE FROM T_WC_WIKIPEDIA_PAGE_LANG_SECTION WHERE ID_WIKIDATA = '{wikidata_id}' AND LANG = '{strlanguage}' AND DISPLAY_ORDER > {lngdisplayorder}"
+            )
+        else:
+            cursor2.execute(
+                f"DELETE FROM T_WC_WIKIPEDIA_PAGE_LANG_SECTION WHERE ID_WIKIDATA = '{wikidata_id}' AND LANG = '{strlanguage}'"
+            )
+        cp.connectioncp.commit()
 
     return lngencount, lngfrcount
 

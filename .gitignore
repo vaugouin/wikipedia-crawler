@@ -7,3 +7,4 @@ serie
 __pycache__/
 .claude/
 archive/
+migrations/

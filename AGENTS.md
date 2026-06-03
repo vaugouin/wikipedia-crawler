@@ -13,6 +13,23 @@ Deeper specs live in their own files:
 
 ---
 
+## Related repositories (project ecosystem)
+
+`wikipedia-crawler` is one stage of **Agent BBB**, a multi-repository movie/TV database system owned by GitHub user `vaugouin`. All sibling repos live under `%USERPROFILE%/Code/<repo>` and at `github.com/vaugouin/<repo>`; they are interdependent stages of one pipeline that converges on a shared MySQL/MariaDB database (`T_WC_*` tables) and a ChromaDB vector store. The canonical roster of sibling repositories is kept in `doc/related-repositories/related-repositories.txt` in the `tmdb-front` repo.
+
+Pipeline stages:
+- **Infrastructure** — `python` (shared crawler base image), `chromadb` (vector service), `reverseproxy` (NGINX TLS ingress), `chromadb-security-test` (firewall validation).
+- **Acquisition** — `tmdb-crawler`, `imdb-crawler`, `sparql-crawler`, `sparql-movies-persons`, `wikidata-crawler`, `wikipedia-crawler`, `selenium-tmdb`, `download-images`, `sqlite-plex-to-tmdb`, `movieparadise`.
+- **Preprocessing → `T_WC_T2S_*`** — `tmdb-movie-preprocess`, `tmdb-person-preprocess`, `keywords-processing`.
+- **Semantic index & name resolution** — `embedding-update`, `embedding-query`, `rapidfuzz_query`.
+- **Serving** — `fastapi-text2sql` (NL→SQL API + MCP server), `voice-agent`, `tmdb-front` (PHP web front-end).
+- **Evaluation** — `eval-text2sql`, `extract-movie-questions`.
+- **Maintenance & tooling** — `plex-duplicates`, `subtitle-translate`, `powershell`, `playwright-test`.
+
+**This repository's role:** Acquisition stage. Fetches Wikipedia article sections (English and French) for Wikidata-linked movies, series, persons, and generic items into the `T_WC_WIKIPEDIA_*` tables, and extracts French «Fiche technique» film-format metadata. Its content is consumed by `tmdb-movie-preprocess` and rendered in the Wikipedia sections of `tmdb-front`.
+
+---
+
 ## Where things live (file → role)
 
 Edit at the right layer; the architecture is intentionally split.
@@ -71,5 +88,11 @@ Keep Markdown, prompt files, JSON config, and logs UTF-8. These files contain no
 
 ---
 
-**Last Updated**: 2026-05-18
+## Build & deployment (Docker)
+
+This crawler is built and run as a Docker container via the repo's root `Dockerfile`. The image is based on `python:3.10.5-slim-buster`, uses `WORKDIR /home/debian/docker/wikipedia-crawler`, installs `requirements.txt`, and runs `python wikipedia_crawler.py` as its `CMD` (note the source tree is mounted/copied at deploy time rather than via a `COPY . /app/` line, which is commented out). Pass database credentials at runtime (e.g. `docker run --env-file ...`); do not bake secrets into the image.
+
+---
+
+**Last Updated**: 2026-06-03
 **Current Version**: 1.0.0 
