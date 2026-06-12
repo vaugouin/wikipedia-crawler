@@ -78,38 +78,59 @@ def f_fetchlangpayload(session, wikidata_id, page_title, strkey, strlanguage, ne
     }
     intsuccess = False
     inthttpstatus = None
-    response = None
-    try:
-        rate_limit()
-        response = session.get(url, params=params, timeout=30)
-        inthttpstatus = response.status_code
-        intsuccess = (inthttpstatus == 200)
-        if not intsuccess:
-            print(f'parse API HTTP {inthttpstatus} for {page_title} ({strlanguage})')
-    except requests.exceptions.HTTPError as http_err:
-        print(f'HTTP error occurred: {http_err}')  # Handle specific HTTP errors
-    except requests.exceptions.ConnectionError as conn_err:
-        print(f'Connection error occurred: {conn_err}')  # Handle connection errors
-    except requests.exceptions.Timeout as timeout_err:
-        print(f'Timeout error occurred: {timeout_err}')  # Handle timeout errors
-    except requests.exceptions.RequestException as req_err:
-        print(f'Request error occurred: {req_err}')  # Handle other request-related errors
-    except Exception as err:
-        print(f'An error occurred: {err}')  # Handle any other exceptions
+    data = None
+    # The API reports maxlag throttling and bad/missing titles as an HTTP 200
+    # ``error`` envelope, so the session-level urllib3 retry (429/5xx only)
+    # never sees them; maxlag is retried here, other API errors are terminal.
+    for _ in range(3):
+        response = None
+        try:
+            rate_limit()
+            response = session.get(url, params=params, timeout=30)
+            inthttpstatus = response.status_code
+            intsuccess = (inthttpstatus == 200)
+            if not intsuccess:
+                print(f'parse API HTTP {inthttpstatus} for {page_title} ({strlanguage})')
+        except requests.exceptions.HTTPError as http_err:
+            print(f'HTTP error occurred: {http_err}')  # Handle specific HTTP errors
+        except requests.exceptions.ConnectionError as conn_err:
+            print(f'Connection error occurred: {conn_err}')  # Handle connection errors
+        except requests.exceptions.Timeout as timeout_err:
+            print(f'Timeout error occurred: {timeout_err}')  # Handle timeout errors
+        except requests.exceptions.RequestException as req_err:
+            print(f'Request error occurred: {req_err}')  # Handle other request-related errors
+        except Exception as err:
+            print(f'An error occurred: {err}')  # Handle any other exceptions
+
+        data = None
+        if intsuccess:
+            try:
+                data = response.json()
+            except ValueError as json_err:
+                print(f'parse API JSON decode error for {page_title} ({strlanguage}): {json_err}')
+
+        arrapierror = data.get('error') if isinstance(data, dict) else None
+        if arrapierror is None:
+            break
+        strerrorcode = arrapierror.get('code', '')
+        strerrorinfo = arrapierror.get('info', '')
+        print(f'parse API error "{strerrorcode}" for {page_title} ({strlanguage}): {strerrorinfo}')
+        intsuccess = False
+        data = None
+        if strerrorcode != 'maxlag':
+            break  # missingtitle, invalidtitle, ... -- retrying will not help
+        dblretryafter = 5.0
+        try:
+            dblretryafter = float(response.headers.get('Retry-After', dblretryafter))
+        except (TypeError, ValueError):
+            pass
+        time.sleep(dblretryafter)
     payload["http_status"] = inthttpstatus
     payload["success"] = intsuccess
 
-    data = None
-    if intsuccess:
-        try:
-            data = response.json()
-        except ValueError as json_err:
-            print(f'parse API JSON decode error for {page_title} ({strlanguage}): {json_err}')
-            data = None
-
     soup = None
     if intsuccess and data is not None:
-        wikipedia_page_content = data['parse']['text']
+        wikipedia_page_content = data.get('parse', {}).get('text')
         if wikipedia_page_content:
             payload["has_content"] = True
             wikipedia_page_content = "<body>" + wikipedia_page_content + "</body>"
