@@ -25,6 +25,7 @@ Pipeline stages:
 - **Serving** — `fastapi-text2sql` (NL→SQL API + MCP server), `voice-agent`, `tmdb-front` (PHP web front-end).
 - **Evaluation** — `eval-text2sql`, `extract-movie-questions`.
 - **Maintenance & tooling** — `plex-duplicates`, `subtitle-translate`, `powershell`, `playwright-test`.
+- **Monitoring & observability** — `data-monitoring`.
 
 **This repository's role:** Acquisition stage. Fetches Wikipedia article sections (English and French) for Wikidata-linked movies, series, persons, and generic items into the `T_WC_WIKIPEDIA_*` tables, and extracts French «Fiche technique» film-format metadata. Its content is consumed by `tmdb-movie-preprocess` and rendered in the Wikipedia sections of `tmdb-front`.
 
