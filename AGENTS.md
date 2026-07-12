@@ -25,6 +25,7 @@ Pipeline stages:
 - **Serving** — `fastapi-text2sql` (NL→SQL API + MCP server), `voice-agent`, `tmdb-front` (PHP web front-end).
 - **Evaluation** — `eval-text2sql`, `extract-movie-questions`.
 - **Maintenance & tooling** — `plex-duplicates`, `subtitle-translate`, `powershell`, `playwright-test`.
+- **Monitoring & observability** — `data-monitoring`.
 
 **This repository's role:** Acquisition stage. Fetches Wikipedia article sections (English and French) for Wikidata-linked movies, series, persons, and generic items into the `T_WC_WIKIPEDIA_*` tables, and extracts French «Fiche technique» film-format metadata. Its content is consumed by `tmdb-movie-preprocess` and rendered in the Wikipedia sections of `tmdb-front`.
 
@@ -96,3 +97,15 @@ This crawler is built and run as a Docker container via the repo's root `Dockerf
 
 **Last Updated**: 2026-06-03
 **Current Version**: 1.0.0 
+
+## Backlog (Nestor second-brain)
+
+The prioritized, agent-ready implementation backlog for this repo lives in the **Nestor**
+knowledge repo (a separate repo, not cloned alongside this one):
+
+- This repo: `C:\Users\vaugo\Nestor\projets\t2s-backlog\repos\wikipedia-crawler.md`
+- Cross-repo dashboard: `C:\Users\vaugo\Nestor\projets\t2s-backlog\index.md`
+
+Consult it before implementing: tasks are `WIKIPEDIA-CRAWLER-NNN` with status (done / in-progress /
+todo), priority, and quick-wins. NOTE: these are local paths on Philippe's PC and do not
+resolve on the VPS or on cloud agents (claude.ai/code).
