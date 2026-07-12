@@ -1,5 +1,23 @@
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!40101 SET character_set_client = utf8 */;
+CREATE TABLE `T_WC_WIKIDATA_CHARACTER` (
+  `ID_ROW` bigint(20) NOT NULL AUTO_INCREMENT,
+  `ID_WIKIDATA` varchar(50) NOT NULL,
+  `LABEL_EN` varchar(500) DEFAULT NULL,
+  `DESCRIPTION_EN` text DEFAULT NULL,
+  `LABELS_JSON` longtext DEFAULT NULL,
+  `DESCRIPTIONS_JSON` longtext DEFAULT NULL,
+  `DELETED` tinyint(1) DEFAULT 0,
+  `DAT_CREAT` datetime DEFAULT current_timestamp(),
+  `TIM_UPDATED` datetime DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  PRIMARY KEY (`ID_ROW`),
+  UNIQUE KEY `UK_T_WC_WIKIDATA_CHARACTER_ID_WIKIDATA` (`ID_WIKIDATA`),
+  KEY `IDX_T_WC_WIKIDATA_CHARACTER_LABEL_EN` (`LABEL_EN`(255)),
+  KEY `IDX_T_WC_WIKIDATA_CHARACTER_DELETED` (`DELETED`)
+) ENGINE=InnoDB AUTO_INCREMENT=122530 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8 */;
 CREATE TABLE `T_WC_WIKIDATA_CHARACTER_V1` (
   `ID_WIKIDATA` varchar(50) NOT NULL,
   `ID_PERSON` int(11) DEFAULT NULL,
@@ -39,7 +57,25 @@ CREATE TABLE `T_WC_WIKIDATA_CHARACTER_V1` (
   KEY `INSTANCE_OF` (`INSTANCE_OF`),
   KEY `ALIASES` (`ALIASES`(768)),
   KEY `WIKIPEDIA_PROFILE_PATH` (`WIKIPEDIA_PROFILE_PATH`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8 */;
+CREATE TABLE `T_WC_WIKIDATA_EPISODE` (
+  `ID_ROW` bigint(20) NOT NULL AUTO_INCREMENT,
+  `ID_WIKIDATA` varchar(50) NOT NULL,
+  `LABEL_EN` varchar(500) DEFAULT NULL,
+  `DESCRIPTION_EN` text DEFAULT NULL,
+  `LABELS_JSON` longtext DEFAULT NULL,
+  `DESCRIPTIONS_JSON` longtext DEFAULT NULL,
+  `DELETED` tinyint(1) DEFAULT 0,
+  `DAT_CREAT` datetime DEFAULT current_timestamp(),
+  `TIM_UPDATED` datetime DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  PRIMARY KEY (`ID_ROW`),
+  UNIQUE KEY `UK_T_WC_WIKIDATA_EPISODE_ID_WIKIDATA` (`ID_WIKIDATA`),
+  KEY `IDX_T_WC_WIKIDATA_EPISODE_LABEL_EN` (`LABEL_EN`(255)),
+  KEY `IDX_T_WC_WIKIDATA_EPISODE_DELETED` (`DELETED`)
+) ENGINE=InnoDB AUTO_INCREMENT=187464 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!40101 SET character_set_client = utf8 */;
@@ -86,7 +122,7 @@ CREATE TABLE `T_WC_WIKIDATA_EPISODE_V1` (
   KEY `EPISODE_NUMBER` (`EPISODE_NUMBER`),
   KEY `INSTANCE_OF` (`INSTANCE_OF`),
   KEY `WIKIPEDIA_POSTER_PATH` (`WIKIPEDIA_POSTER_PATH`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!40101 SET character_set_client = utf8 */;
@@ -147,7 +183,7 @@ CREATE TABLE `T_WC_WIKIDATA_ITEM` (
   UNIQUE KEY `UK_T_WC_WIKIDATA_ITEM_ID_WIKIDATA` (`ID_WIKIDATA`),
   KEY `IDX_T_WC_WIKIDATA_ITEM_LABEL_EN` (`LABEL_EN`(255)),
   KEY `IDX_T_WC_WIKIDATA_ITEM_DELETED` (`DELETED`)
-) ENGINE=InnoDB AUTO_INCREMENT=1777638 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=1807119 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!40101 SET character_set_client = utf8 */;
@@ -173,8 +209,10 @@ CREATE TABLE `T_WC_WIKIDATA_ITEM_PROPERTY` (
   KEY `DAT_CREAT` (`DAT_CREAT`),
   KEY `ID_WIKIDATA` (`ID_WIKIDATA`),
   KEY `ID_PROPERTY` (`ID_PROPERTY`),
-  KEY `ID_ITEM` (`ID_ITEM`)
-) ENGINE=InnoDB AUTO_INCREMENT=11380383 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+  KEY `ID_ITEM` (`ID_ITEM`),
+  KEY `IDX_PROPERTY_WIKIDATA` (`ID_PROPERTY`,`ID_WIKIDATA`),
+  KEY `IDX_PROPERTY_ITEM` (`ID_PROPERTY`,`ID_ITEM`)
+) ENGINE=InnoDB AUTO_INCREMENT=11610781 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!40101 SET character_set_client = utf8 */;
@@ -208,7 +246,7 @@ CREATE TABLE `T_WC_WIKIDATA_ITEM_V1` (
   KEY `ID_WIKIDATA` (`ID_WIKIDATA`),
   KEY `INSTANCE_OF` (`INSTANCE_OF`),
   KEY `WIKIPEDIA_IMAGE_PATH` (`WIKIPEDIA_IMAGE_PATH`)
-) ENGINE=InnoDB AUTO_INCREMENT=1907514 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=2906973 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!40101 SET character_set_client = utf8 */;
@@ -312,7 +350,7 @@ CREATE TABLE `T_WC_WIKIDATA_MEDIA_RESOURCE` (
   KEY `IDX_T_WC_WIKIDATA_MEDIA_RESOURCE_DELETED` (`DELETED`),
   KEY `IDX_T_WC_WIKIDATA_MEDIA_RESOURCE_ENTITY_PLATFORM` (`ID_WIKIDATA`,`SOURCE_PLATFORM`),
   CONSTRAINT `FK_T_WC_WIKIDATA_MEDIA_RESOURCE_STATEMENT` FOREIGN KEY (`ID_STATEMENT`) REFERENCES `T_WC_WIKIDATA_STATEMENT` (`ID_STATEMENT`) ON DELETE CASCADE ON UPDATE CASCADE
-) ENGINE=InnoDB AUTO_INCREMENT=286715 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=310967 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!40101 SET character_set_client = utf8 */;
@@ -411,7 +449,7 @@ CREATE TABLE `T_WC_WIKIDATA_MEDIA_RESOURCE_URL` (
   KEY `IDX_T_WC_WIKIDATA_MEDIA_RESOURCE_URL_QUALITY_LABEL` (`QUALITY_LABEL`),
   KEY `IDX_T_WC_WIKIDATA_MEDIA_RESOURCE_URL_DELETED` (`DELETED`),
   CONSTRAINT `FK_T_WC_WIKIDATA_MEDIA_RESOURCE_URL_RESOURCE` FOREIGN KEY (`ID_MEDIA_RESOURCE`) REFERENCES `T_WC_WIKIDATA_MEDIA_RESOURCE` (`ID_MEDIA_RESOURCE`) ON DELETE CASCADE ON UPDATE CASCADE
-) ENGINE=InnoDB AUTO_INCREMENT=851952 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=927398 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!40101 SET character_set_client = utf8 */;
@@ -474,7 +512,7 @@ CREATE TABLE `T_WC_WIKIDATA_MOVIE` (
   UNIQUE KEY `UK_T_WC_WIKIDATA_MOVIE_ID_WIKIDATA` (`ID_WIKIDATA`),
   KEY `IDX_T_WC_WIKIDATA_MOVIE_LABEL_EN` (`LABEL_EN`(255)),
   KEY `IDX_T_WC_WIKIDATA_MOVIE_DELETED` (`DELETED`)
-) ENGINE=InnoDB AUTO_INCREMENT=1183727 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=1226603 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!40101 SET character_set_client = utf8 */;
@@ -516,7 +554,7 @@ CREATE TABLE `T_WC_WIKIDATA_MOVIE_V1` (
   KEY `PLEX_MEDIA_KEY` (`PLEX_MEDIA_KEY`),
   KEY `INSTANCE_OF` (`INSTANCE_OF`),
   KEY `WIKIPEDIA_POSTER_PATH` (`WIKIPEDIA_POSTER_PATH`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!40101 SET character_set_client = utf8 */;
@@ -534,7 +572,7 @@ CREATE TABLE `T_WC_WIKIDATA_PERSON` (
   UNIQUE KEY `UK_T_WC_WIKIDATA_PERSON_ID_WIKIDATA` (`ID_WIKIDATA`),
   KEY `IDX_T_WC_WIKIDATA_PERSON_LABEL_EN` (`LABEL_EN`(255)),
   KEY `IDX_T_WC_WIKIDATA_PERSON_DELETED` (`DELETED`)
-) ENGINE=InnoDB AUTO_INCREMENT=2367453 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=2351448 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!40101 SET character_set_client = utf8 */;
@@ -573,7 +611,7 @@ CREATE TABLE `T_WC_WIKIDATA_PERSON_V1` (
   KEY `INSTANCE_OF` (`INSTANCE_OF`),
   KEY `ALIASES` (`ALIASES`(768)),
   KEY `WIKIPEDIA_PROFILE_PATH` (`WIKIPEDIA_PROFILE_PATH`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!40101 SET character_set_client = utf8 */;
@@ -600,7 +638,7 @@ CREATE TABLE `T_WC_WIKIDATA_PROPERTY` (
   KEY `DAT_CREAT` (`DAT_CREAT`),
   KEY `LABEL` (`LABEL`),
   KEY `LABEL_FR` (`LABEL_FR`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!40101 SET character_set_client = utf8 */;
@@ -627,7 +665,7 @@ CREATE TABLE `T_WC_WIKIDATA_PROPERTY_METADATA` (
   KEY `IDX_T_WC_WIKIDATA_PROPERTY_METADATA_IS_SUPPORTED` (`IS_SUPPORTED`),
   KEY `IDX_T_WC_WIKIDATA_PROPERTY_METADATA_IS_ACTIVE` (`IS_ACTIVE`),
   KEY `IDX_T_WC_WIKIDATA_PROPERTY_METADATA_DELETED` (`DELETED`)
-) ENGINE=InnoDB AUTO_INCREMENT=49406 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=46594 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!40101 SET character_set_client = utf8 */;
@@ -702,7 +740,7 @@ CREATE TABLE `T_WC_WIKIDATA_QUALIFIER_TIME_VALUE` (
   `TIME_PRECISION` int(11) DEFAULT NULL,
   `CALENDAR_MODEL` varchar(255) DEFAULT NULL,
   `TIMEZONE_OFFSET` int(11) DEFAULT NULL,
-  `YEAR_VALUE` int(11) DEFAULT NULL,
+  `YEAR_VALUE` bigint(20) DEFAULT NULL,
   `MONTH_VALUE` int(11) DEFAULT NULL,
   `DAY_VALUE` int(11) DEFAULT NULL,
   `DATE_START` date DEFAULT NULL,
@@ -760,6 +798,24 @@ DELIMITER ;
 /*!50003 SET collation_connection  = @saved_col_connection */ ;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!40101 SET character_set_client = utf8 */;
+CREATE TABLE `T_WC_WIKIDATA_SEASON` (
+  `ID_ROW` bigint(20) NOT NULL AUTO_INCREMENT,
+  `ID_WIKIDATA` varchar(50) NOT NULL,
+  `LABEL_EN` varchar(500) DEFAULT NULL,
+  `DESCRIPTION_EN` text DEFAULT NULL,
+  `LABELS_JSON` longtext DEFAULT NULL,
+  `DESCRIPTIONS_JSON` longtext DEFAULT NULL,
+  `DELETED` tinyint(1) DEFAULT 0,
+  `DAT_CREAT` datetime DEFAULT current_timestamp(),
+  `TIM_UPDATED` datetime DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  PRIMARY KEY (`ID_ROW`),
+  UNIQUE KEY `UK_T_WC_WIKIDATA_SEASON_ID_WIKIDATA` (`ID_WIKIDATA`),
+  KEY `IDX_T_WC_WIKIDATA_SEASON_LABEL_EN` (`LABEL_EN`(255)),
+  KEY `IDX_T_WC_WIKIDATA_SEASON_DELETED` (`DELETED`)
+) ENGINE=InnoDB AUTO_INCREMENT=27806 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8 */;
 CREATE TABLE `T_WC_WIKIDATA_SEASON_V1` (
   `ID_WIKIDATA` varchar(50) NOT NULL,
   `ID_SEASON` int(11) NOT NULL,
@@ -799,7 +855,7 @@ CREATE TABLE `T_WC_WIKIDATA_SEASON_V1` (
   KEY `SEASON_NUMBER` (`SEASON_NUMBER`),
   KEY `INSTANCE_OF` (`INSTANCE_OF`),
   KEY `WIKIPEDIA_POSTER_PATH` (`WIKIPEDIA_POSTER_PATH`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!40101 SET character_set_client = utf8 */;
@@ -817,7 +873,7 @@ CREATE TABLE `T_WC_WIKIDATA_SERIE` (
   UNIQUE KEY `UK_T_WC_WIKIDATA_SERIE_ID_WIKIDATA` (`ID_WIKIDATA`),
   KEY `IDX_T_WC_WIKIDATA_SERIE_LABEL_EN` (`LABEL_EN`(255)),
   KEY `IDX_T_WC_WIKIDATA_SERIE_DELETED` (`DELETED`)
-) ENGINE=InnoDB AUTO_INCREMENT=397307 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=364764 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!40101 SET character_set_client = utf8 */;
@@ -861,7 +917,7 @@ CREATE TABLE `T_WC_WIKIDATA_SERIE_V1` (
   KEY `INSTANCE_OF` (`INSTANCE_OF`),
   KEY `DAT_END` (`DAT_END`),
   KEY `WIKIPEDIA_POSTER_PATH` (`WIKIPEDIA_POSTER_PATH`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!40101 SET character_set_client = utf8 */;
@@ -983,7 +1039,7 @@ CREATE TABLE `T_WC_WIKIDATA_TIME_VALUE` (
   `TIME_PRECISION` int(11) DEFAULT NULL,
   `CALENDAR_MODEL` varchar(255) DEFAULT NULL,
   `TIMEZONE_OFFSET` int(11) DEFAULT NULL,
-  `YEAR_VALUE` int(11) DEFAULT NULL,
+  `YEAR_VALUE` bigint(20) DEFAULT NULL,
   `MONTH_VALUE` int(11) DEFAULT NULL,
   `DAY_VALUE` int(11) DEFAULT NULL,
   `DATE_START` date DEFAULT NULL,

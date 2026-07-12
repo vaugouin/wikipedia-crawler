@@ -8,3 +8,6 @@ __pycache__/
 .claude/
 archive/
 migrations/
+
+# Claude Code / agent local tooling
+.agents/
