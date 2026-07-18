@@ -100,6 +100,20 @@ Wikipedia image retrieval helpers:
   Decorative icons that do not sit inside one of these markers (flag icons, language tags, Wikipedia logos, etc.) return no caption rather than inheriting a nearby unrelated caption.
 - `get_main_image_caption_for_page(title, image_url, lang)` — best-effort caption for the lead image (parsed HTML first, then Commons / local file metadata as fallback).
 
+### `wikipedia_page_writer.py`
+Shared per-entity fetch + persist pipeline used by both the full crawler and the single-Qid entry point:
+
+- `f_fetchlangpayload(...)` — network + HTML parsing for one `(entity, language)` page (thread-safe, no DB work).
+- `f_writelangtodb(...)` — persists one payload (page metadata, images, sections, main-image and movie-Format writebacks). Its `blnwritecounters` flag lets the single-Qid path skip monitoring-counter writes.
+- `CONTENT_CONFIG` — per-content `id` / `imagetable` / `imagecolumn` / source-table mapping mirroring `arrprocesses` in `wikipedia_crawler.py`.
+
+Living here (rather than in `wikipedia_crawler.py`, whose body runs a full crawl at import time) lets `wikipedia_functions.py` reuse this logic without launching a crawl.
+
+### `wikipedia_functions.py`
+Single-Qid entry point, analogous to the `tmdb_functions` one-shot helpers:
+
+- `f_wikipediaqidtosqleverything(strwikidataid, strcontent="item", arrlanguages=("en", "fr"))` — fully refreshes the Wikipedia data for one Wikidata entity, parallel-safe with a running crawler. See [Refreshing a single Qid in a parallel container](#refreshing-a-single-qid-in-a-parallel-container).
+
 ## Data flow
 
 For each selected row:
@@ -404,6 +418,61 @@ Current order:
 | 20       | 222 | `season`         | 2026-05-24       |
 
 When `intquickmode = False`, the regular `arrprocessscope = arrprocesses[resume_index:]` path applies and the [Resume mechanism](#resume-mechanism) above governs ordering and checkpointing.
+
+## Refreshing a single Qid in a parallel container
+
+Quick mode parallelizes *whole processes*. When you instead want to refresh **one specific Wikidata entity** on demand — while the main `wikipedia-crawler` container keeps running long jobs like `202 person` — use the single-Qid entry point in [wikipedia_functions.py](wikipedia_functions.py). This mirrors the `tmdb-crawler` pattern of dropping into an interactive Python container and calling a one-shot function (`tf.f_tmdbmovietosqleverything(13860)`).
+
+### The function
+
+```python
+import wikipedia_functions as wf
+
+wf.f_wikipediaqidtosqleverything("Q24815")                       # item (default type)
+wf.f_wikipediaqidtosqleverything("Q25188", strcontent="movie")   # a movie
+wf.f_wikipediaqidtosqleverything("Q42",    strcontent="person")  # a person
+wf.f_wikipediaqidtosqleverything("Q1234",  strcontent="serie", arrlanguages=("fr",))  # French only
+```
+
+`f_wikipediaqidtosqleverything(strwikidataid, strcontent="item", arrlanguages=("en", "fr"))` runs the exact per-entity pipeline the full crawler runs for one row: it resolves the `en`/`fr` page titles from Wikidata, then writes page metadata to `T_WC_WIKIPEDIA_PAGE_LANG`, every page image to `T_WC_WIKIPEDIA_PAGE_LANG_IMAGE`, and structured sections to `T_WC_WIKIPEDIA_PAGE_LANG_SECTION`, plus the content-specific main-image writeback and (for `strcontent="movie"`) the French `Fiche technique` Format line. `strcontent` must be one of the entity families listed in [Entities crawled](#entities-crawled) (`movie`, `person`, `item`, `serie`, `wikidatacharacter`, `other`, `list`, `movement`, `collection`, `group`, `death`, `award`, `nomination`, `topic`, `technical`, `character`, `tmdbcollection`, `episode`, `keyword`, `season`); it selects the main-image destination column and enables movie-only enrichment.
+
+**Why it is parallel-safe:** the per-entity fetch/persist code is shared with the main crawler (extracted into [wikipedia_page_writer.py](wikipedia_page_writer.py)), but this path writes **no** resume-state or monitoring server variables (it calls the shared writer with `blnwritecounters=False`). It therefore cannot advance or corrupt the main container's `strwikipediacrawler*` checkpoints. All page/section/image writes are keyed upserts on `(ID_WIKIDATA, LANG, DISPLAY_ORDER)`, so refreshing a Qid is idempotent. Run it against a Qid the main crawler is not simultaneously processing.
+
+### Running it in a second container
+
+Use the helper [wikipedia-crawler-manual.sh](wikipedia-crawler-manual.sh), which builds the same image and starts an interactive container under a **different** name (`wikipedia-crawler-manual`) so it coexists with the always-on `wikipedia-crawler` container. It mounts the working tree and reads the same host-managed `--env-file`, exactly like the main launcher.
+
+Interactive REPL:
+
+```bash
+./wikipedia-crawler-manual.sh
+>>> import wikipedia_functions as wf
+>>> wf.f_wikipediaqidtosqleverything("Q25188", strcontent="movie")
+```
+
+One-shot (run a single Qid and exit):
+
+```bash
+./wikipedia-crawler-manual.sh Q25188 --item-type movie
+./wikipedia-crawler-manual.sh Q24815              # defaults to item, en + fr
+./wikipedia-crawler-manual.sh Q24815 --lang fr    # French only
+```
+
+Or, to reproduce the tmdb-crawler workflow by hand (mirroring the attached screenshot's `docker run -it ... python`):
+
+```bash
+docker build -t wikipedia-crawler-python-app .
+docker run -it --rm --network="host" \
+  --env-file /home/debian/docker/wikipedia-crawler/.env \
+  -v $(pwd):/home/debian/docker/wikipedia-crawler \
+  --name wikipedia-crawler-manual wikipedia-crawler-python-app python
+# then, in the REPL:
+>>> import citizenphil as cp
+>>> import wikipedia_functions as wf
+>>> wf.f_wikipediaqidtosqleverything("Q25188", strcontent="movie")
+```
+
+Unlike [test_wikipedia_page_images.py](test_wikipedia_page_images.py) (which only mirrors steps 4–6, the image pipeline), `f_wikipediaqidtosqleverything` runs the **full** per-entity data flow including section extraction and content-specific enrichment.
 
 ## Important detail about resume behavior
 
