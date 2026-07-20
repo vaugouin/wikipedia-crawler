@@ -11,6 +11,7 @@ from datetime import datetime
 from bs4 import BeautifulSoup
 import wikipedia_images as wimg
 from wikipedia_crawler_helpers import (
+    WikidataTransientError,
     extract_titles_and_text,
     get_linked_pages,
     get_linked_pages_batch,
@@ -877,6 +878,12 @@ try:
                 cp.f_setservervariable("strwikipediacrawlertotalruntime",readable_duration,strtotalruntimedesc,0)
             print(f"Total runtime: {strtotalruntime} seconds ({readable_duration})")
     print("Process completed")
+except WikidataTransientError as e:
+    # WIKIPEDIA-CRAWLER-017: a Wikidata maxlag / transient outage persisted through all
+    # retries. Stop cleanly: the per-entity resume server-vars still point at the last
+    # SUCCESSFULLY processed entity, so the un-checkpointed chunk is re-crawled on the next
+    # run. Never let this be swallowed as "no sitelinks" (silent content loss).
+    print(f"⏸️  Wikidata transient outage, stopping to resume next run: {e}")
 except pymysql.MySQLError as e:
     print(f"❌ MySQL Error: {e}")
     conn = getattr(cp, "connectioncp", None)

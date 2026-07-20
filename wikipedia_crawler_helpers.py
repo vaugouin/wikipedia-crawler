@@ -1,4 +1,5 @@
 import os
+import time
 
 import requests
 from bs4 import BeautifulSoup
@@ -18,6 +19,75 @@ headers = {
 
 WIKIDATA_API_URL = "https://www.wikidata.org/w/api.php"
 
+# WIKIPEDIA-CRAWLER-017: wbgetentities returns HTTP 200 with an {"error": {"code": "maxlag"}}
+# body when the service is lagged — that is NOT data. The shared session only retries
+# 429/5xx transport errors (status_forcelist), so this 200+error case slipped through and
+# was treated as "no sitelinks" (silent skip / content loss). Retry it here with backoff.
+WBGETENTITIES_MAX_RETRIES = 5
+WBGETENTITIES_MAX_BACKOFF = 60  # seconds, cap for a single wait
+
+
+class WikidataTransientError(Exception):
+    """A transient failure (maxlag / rate-limit / network) that persisted through every
+    retry, so the caller should leave the entity for a later pass rather than mark its
+    Wikipedia page empty."""
+
+
+def _wbgetentities_backoff(attempt, retry_after):
+    """Sleep before a retry: honor Retry-After when present, else exponential backoff
+    (5, 10, 20, 40 ... capped at WBGETENTITIES_MAX_BACKOFF)."""
+    wait = None
+    if retry_after:
+        try:
+            wait = float(retry_after)
+        except (TypeError, ValueError):
+            wait = None
+    if wait is None:
+        wait = 5 * (2 ** (attempt - 1))
+    time.sleep(min(WBGETENTITIES_MAX_BACKOFF, wait))
+
+
+def _wbgetentities(params, label):
+    """Call the Wikidata wbgetentities API, handling the maxlag error (200 + error body).
+
+    Returns the parsed JSON on success; returns ``None`` on a non-retryable API/HTTP error;
+    raises ``WikidataTransientError`` if maxlag / a transient error persists through every
+    retry (so the caller does not silently skip a page that actually has sitelinks)."""
+    session = get_session()
+    for attempt in range(1, WBGETENTITIES_MAX_RETRIES + 1):
+        try:
+            rate_limit()
+            response = session.get(WIKIDATA_API_URL, params=params, timeout=30)
+        except (requests.exceptions.SSLError,
+                requests.exceptions.ConnectionError,
+                requests.exceptions.Timeout,
+                requests.exceptions.RetryError) as err:
+            print(f"{label} transient error (attempt {attempt}/{WBGETENTITIES_MAX_RETRIES}): {err}")
+            _wbgetentities_backoff(attempt, None)
+            continue
+
+        if response.status_code != 200:
+            print(f"{label} HTTP {response.status_code} (non-retryable)")
+            return None
+
+        data = response.json()
+        error = data.get("error") if isinstance(data, dict) else None
+        if not error:
+            return data  # success
+
+        if error.get("code") == "maxlag":
+            print(f"{label} maxlag {error.get('lag')}s "
+                  f"(attempt {attempt}/{WBGETENTITIES_MAX_RETRIES}); backing off")
+            _wbgetentities_backoff(attempt, response.headers.get("Retry-After"))
+            continue
+
+        # Any other API error is not retryable here.
+        print(f"{label} API error {error.get('code')}: {error.get('info')}")
+        return None
+
+    raise WikidataTransientError(
+        f"{label}: wbgetentities still maxlag/failing after {WBGETENTITIES_MAX_RETRIES} retries")
+
 
 def get_linked_pages(wikidata_id, strprops, strlanguage):
     """Resolve a single Wikidata id to its sitelink/page data for one language.
@@ -34,21 +104,7 @@ def get_linked_pages(wikidata_id, strprops, strlanguage):
     }
     if strprops != '':
         params['props'] = strprops
-    session = get_session()
-    try:
-        rate_limit()
-        response = session.get(WIKIDATA_API_URL, params=params, timeout=30)
-        print(response)
-        if response.status_code == 200:
-            return response.json()
-        return f"Error: {response.status_code}"
-    except (requests.exceptions.SSLError,
-            requests.exceptions.ConnectionError,
-            requests.exceptions.Timeout) as err:
-        # The shared session already retries/backs off on transient HTTP errors;
-        # this guards the rarer connection-level failures it surfaces.
-        print(f"get_linked_pages transient error for {wikidata_id} ({strlanguage}): {err}")
-        return None
+    return _wbgetentities(params, f"get_linked_pages({wikidata_id}, {strlanguage})")
 
 
 def get_linked_pages_batch(wikidata_ids, strprops='sitelinks', strlanguages='en|fr'):
@@ -57,7 +113,8 @@ def get_linked_pages_batch(wikidata_ids, strprops='sitelinks', strlanguages='en|
     ``wbgetentities`` accepts up to 50 ids and multiple languages at once, so one
     batched call replaces the previous one-call-per-(entity, language). Pass the
     languages pipe-joined (e.g. ``"en|fr"``). Returns the parsed JSON (with the
-    ``entities`` map) or ``None`` on failure.
+    ``entities`` map), ``None`` on a non-retryable error, or raises
+    ``WikidataTransientError`` on persistent maxlag / transient failure.
     """
     ids = list(wikidata_ids)
     if not ids:
@@ -73,19 +130,7 @@ def get_linked_pages_batch(wikidata_ids, strprops='sitelinks', strlanguages='en|
     }
     if strprops != '':
         params['props'] = strprops
-    session = get_session()
-    try:
-        rate_limit()
-        response = session.get(WIKIDATA_API_URL, params=params, timeout=30)
-        if response.status_code == 200:
-            return response.json()
-        print(f"get_linked_pages_batch HTTP {response.status_code} for {len(ids)} ids")
-        return None
-    except (requests.exceptions.SSLError,
-            requests.exceptions.ConnectionError,
-            requests.exceptions.Timeout) as err:
-        print(f"get_linked_pages_batch transient error for {len(ids)} ids: {err}")
-        return None
+    return _wbgetentities(params, f"get_linked_pages_batch({len(ids)} ids)")
 
 
 # WIKIPEDIA-CRAWLER-016: bottom-of-page sections are NEVER sub-split on <h3> — their
