@@ -88,81 +88,95 @@ def get_linked_pages_batch(wikidata_ids, strprops='sitelinks', strlanguages='en|
         return None
 
 
+# WIKIPEDIA-CRAWLER-016: bottom-of-page sections are NEVER sub-split on <h3> — their
+# subsections would otherwise escape the end-matter exclusion filters that downstream
+# repos apply by exact H2 title (e.g. `TITLE NOT IN ('References','See also',...)` in
+# tmdb-front / fastapi-text2sql). Compared case-insensitively against the H2 title.
+NO_SUBSPLIT_SECTION_TITLES = {
+    # EN
+    "references", "see also", "external links", "further reading",
+    "notes and references", "notes", "bibliography", "citations", "sources",
+    # FR
+    "références", "voir aussi", "liens externes", "notes et références",
+    "bibliographie",
+}
+
+
+def _append_block_text(section_text, sibling):
+    """Append one rendered-HTML block's flattened text to the running section text,
+    matching the historical extraction rules (p / h3 / h4 as lines, ul / ol as bullets)."""
+    name = sibling.name
+    if name == 'p':
+        text = sibling.get_text()
+        if text:
+            section_text += '\n' + text + " "
+    elif name == 'h3' or name == 'h4':
+        text = sibling.get_text()
+        if text:
+            section_text += '\n' + text + " "
+    elif name == 'ul':
+        for li in sibling.find_all('li', recursive=True):
+            section_text += '\n- ' + ' '.join(t.strip() for t in li.strings if t.strip())
+    elif name == 'ol':
+        for li in sibling.find_all('li', recursive=True):
+            section_text += '\n- ' + ' '.join(t.strip() for t in li.strings if t.strip())
+    return section_text
+
+
+def _clean_section_text(section_text):
+    section_text = section_text.strip()
+    while "\n\n" in section_text:
+        section_text = section_text.replace("\n\n", "\n")
+    return section_text
+
+
 def extract_titles_and_text(html_content=None, soup=None):
     """Turn rendered page HTML into ``[(section_title, section_text), ...]``.
 
     Accepts either raw ``html_content`` or a pre-parsed ``soup``; passing an
     already-built soup lets the caller parse the page HTML once and reuse it for
     both section extraction and image captions (Phase 1b).
+
+    WIKIPEDIA-CRAWLER-016: sections split on ``<h2>`` **and** ``<h3>`` (``<h4>`` stays
+    inline inside its ``<h3>``). An ``<h3>`` sub-section is titled ``"Parent - Child"``
+    (composite); the ``<h2>`` lead text before the first ``<h3>`` keeps the bare ``<h2>``
+    title. Bottom-of-page sections (References, See also, …) are never sub-split so their
+    subsections don't escape downstream end-matter exclusion filters. Empty sections are
+    dropped.
     """
     if soup is None:
         soup = BeautifulSoup(html_content, 'html.parser')
     headers = soup.find_all('h2')
     result = []
     first_h2 = headers[0] if headers else None
+
+    # Intro = everything before the first <h2> (never sub-split).
     section_text = ""
     for sibling in soup.body.find_all(recursive=True):
-        if sibling == first_h2:
+        if sibling == first_h2 or sibling.name == "h2":
             break
-        elif sibling.name == "h2":
-            break
-        elif sibling.name == 'p':
-            text = sibling.get_text()
-            if text:
-                section_text += '\n' + text + " "
-        elif sibling.name == 'h3' or sibling.name == 'h4':
-            text = sibling.get_text()
-            if text:
-                section_text += '\n' + text + " "
-        elif sibling.name == 'ul':
-            for li in sibling.find_all('li', recursive=True):
-                section_text += '\n- ' + ' '.join(t.strip() for t in li.strings if t.strip())
-        elif sibling.name == 'ol':
-            for li in sibling.find_all('li', recursive=True):
-                section_text += '\n- ' + ' '.join(t.strip() for t in li.strings if t.strip())
-        elif sibling.name == 'ul' and 'gallery' in sibling.get('class', []):
-            caption = sibling.find('li', class_='gallerycaption')
-            if caption:
-                section_text += '\n' + caption.get_text() + " "
-            for gallery_text in sibling.find_all('div', class_='gallerytext'):
-                text = gallery_text.get_text()
-                if text:
-                    section_text += '\n' + text
-    section_text = section_text.strip()
-    while "\n\n" in section_text:
-        section_text = section_text.replace("\n\n", "\n")
-    result.append(('Intro', section_text))
+        section_text = _append_block_text(section_text, sibling)
+    result.append(('Intro', _clean_section_text(section_text)))
 
     for h2 in headers:
-        title = h2.get_text()
+        h2_title = h2.get_text().strip()
+        no_subsplit = h2_title.lower() in NO_SUBSPLIT_SECTION_TITLES
+        current_title = h2_title  # the H2 lead (chapô) keeps the bare H2 title
         section_text = ""
         for sibling in h2.find_all_next():
             if sibling.name == "h2":
                 break
-            elif sibling.name == 'p':
-                text = sibling.get_text()
-                if text:
-                    section_text += '\n' + sibling.get_text() + " "
-            elif sibling.name == 'h3' or sibling.name == 'h4':
-                text = sibling.get_text()
-                if text:
-                    section_text += '\n' + text + " "
-            elif sibling.name == 'ul':
-                for li in sibling.find_all('li', recursive=True):
-                    section_text += '\n- ' + ' '.join(t.strip() for t in li.strings if t.strip())
-            elif sibling.name == 'ol':
-                for li in sibling.find_all('li', recursive=True):
-                    section_text += '\n- ' + ' '.join(t.strip() for t in li.strings if t.strip())
-            elif sibling.name == 'ul' and 'gallery' in sibling.get('class', []):
-                caption = sibling.find('li', class_='gallerycaption')
-                if caption:
-                    section_text += '\n' + caption.get_text() + " "
-                for gallery_text in sibling.find_all('div', class_='gallerytext'):
-                    text = gallery_text.get_text()
-                    if text:
-                        section_text += '\n' + text
-        section_text = section_text.strip()
-        while "\n\n" in section_text:
-            section_text = section_text.replace("\n\n", "\n")
-        result.append((title, section_text))
+            if sibling.name == 'h3' and not no_subsplit:
+                # Flush the current (sub)section and open a new composite one.
+                cleaned = _clean_section_text(section_text)
+                if cleaned:
+                    result.append((current_title, cleaned))
+                h3_title = sibling.get_text().strip()
+                current_title = f"{h2_title} - {h3_title}" if h3_title else h2_title
+                section_text = ""
+                continue
+            section_text = _append_block_text(section_text, sibling)
+        cleaned = _clean_section_text(section_text)
+        if cleaned:
+            result.append((current_title, cleaned))
     return result
