@@ -19,10 +19,13 @@ headers = {
 
 WIKIDATA_API_URL = "https://www.wikidata.org/w/api.php"
 
-# WIKIPEDIA-CRAWLER-017: wbgetentities returns HTTP 200 with an {"error": {"code": "maxlag"}}
-# body when the service is lagged — that is NOT data. The shared session only retries
-# 429/5xx transport errors (status_forcelist), so this 200+error case slipped through and
-# was treated as "no sitelinks" (silent skip / content loss). Retry it here with backoff.
+# WIKIPEDIA-CRAWLER-017. These are READ-ONLY sitelink lookups, so we no longer send
+# `maxlag`: on Wikidata `maxlag` reflects the Query Service (WDQS) lag, which is unrelated
+# to reading sitelinks and was false-blocking every read whenever WDQS was lagged (e.g.
+# maxlag 23.9s persistent). The error-detection + retry below stays as a safety net in case
+# wbgetentities ever returns an error body for another reason: such a 200+error body is NOT
+# data, so it must be retried (the shared session only retries 429/5xx), never treated as
+# "no sitelinks" (which caused silent skip / content loss).
 WBGETENTITIES_MAX_RETRIES = 5
 WBGETENTITIES_MAX_BACKOFF = 60  # seconds, cap for a single wait
 
@@ -100,7 +103,6 @@ def get_linked_pages(wikidata_id, strprops, strlanguage):
         'format': 'json',
         'ids': wikidata_id,
         'languages': strlanguage,
-        'maxlag': 5,
     }
     if strprops != '':
         params['props'] = strprops
@@ -126,7 +128,6 @@ def get_linked_pages_batch(wikidata_ids, strprops='sitelinks', strlanguages='en|
         'format': 'json',
         'ids': '|'.join(ids),
         'languages': strlanguages,
-        'maxlag': 5,
     }
     if strprops != '':
         params['props'] = strprops
