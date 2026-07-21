@@ -822,20 +822,29 @@ try:
                                     blnpresent = strkey in sitelinks
                                     page_title = (sitelinks.get(strkey) or {}).get('title') if blnpresent else None
                                     if page_title:
+                                        strpageurl = (
+                                            f"https://{strlanguage}.wikipedia.org/wiki/"
+                                            f"{urllib.parse.quote(page_title.replace(' ', '_'))}"
+                                        )
                                         future = executor.submit(
                                             f_fetchlangpayload, session, wikidata_id,
                                             page_title, strkey, strlanguage, needs_image,
                                         )
                                     else:
+                                        strpageurl = None
                                         future = None
-                                    arrtasks.append((strlanguage, blnpresent, future))
+                                    arrtasks.append((strlanguage, blnpresent, future, strpageurl))
                                 arrrowtasks.append((row, arrtasks))
                             # Drain in submission order; all DB writes stay on this thread.
                             for row, arrtasks in arrrowtasks:
                                 lngid = row['id']
                                 wikidata_id = row['ID_WIKIDATA']
+                                print("-" * 80)
                                 print(f"TMDb {strcontent} id {lngid} Wikidata id: {wikidata_id} ")
-                                for strlanguage, blnpresent, future in arrtasks:
+                                for strlanguage, blnpresent, future, strpageurl in arrtasks:
+                                    if strpageurl:
+                                        print(f"  {strlanguage}: {strpageurl}")
+                                for strlanguage, blnpresent, future, strpageurl in arrtasks:
                                     if future is None:
                                         if blnpresent:
                                             print(f'No Wikipedia page found for {strcontent} id {wikidata_id} and language code {strlanguage}')
