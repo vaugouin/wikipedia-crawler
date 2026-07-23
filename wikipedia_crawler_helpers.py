@@ -176,6 +176,23 @@ def _clean_section_text(section_text):
     return section_text
 
 
+def _normalize_heading_separator(title):
+    """Escape a spaced hyphen INSIDE a single heading so it can't be mistaken for the
+    composite ``"H2 - H3"`` join.
+
+    WIKIPEDIA-CRAWLER-016 keeps ``" - "`` (spaced hyphen-minus) as the separator between the
+    H2 parent and the H3 child. But some headings contain a spaced hyphen of their own --
+    date ranges (``"2015 - present"``, ``"1926 - 1929"``) are common in person filmographies
+    and career phases, and appositive titles use it too. Left as-is, a downstream split on
+    ``" - "`` would recover the wrong parent/child (observed in the person-section audit,
+    2026-07-23). Replacing the intra-title spaced hyphen with a spaced en-dash (which Wikipedia
+    itself uses for ranges) guarantees the ONLY ``" - "`` in a composite title is the join.
+    Only the spaced ASCII hyphen-minus collides; an unspaced ``"1926-1929"`` or an existing
+    en/em dash does not, so those are left untouched.
+    """
+    return title.replace(" - ", " – ")
+
+
 def extract_titles_and_text(html_content=None, soup=None):
     """Turn rendered page HTML into ``[(section_title, section_text), ...]``.
 
@@ -205,7 +222,7 @@ def extract_titles_and_text(html_content=None, soup=None):
     result.append(('Intro', _clean_section_text(section_text)))
 
     for h2 in headers:
-        h2_title = h2.get_text().strip()
+        h2_title = _normalize_heading_separator(h2.get_text().strip())
         no_subsplit = h2_title.lower() in NO_SUBSPLIT_SECTION_TITLES
         current_title = h2_title  # the H2 lead (chapô) keeps the bare H2 title
         section_text = ""
@@ -217,7 +234,7 @@ def extract_titles_and_text(html_content=None, soup=None):
                 cleaned = _clean_section_text(section_text)
                 if cleaned:
                     result.append((current_title, cleaned))
-                h3_title = sibling.get_text().strip()
+                h3_title = _normalize_heading_separator(sibling.get_text().strip())
                 current_title = f"{h2_title} - {h3_title}" if h3_title else h2_title
                 section_text = ""
                 continue
