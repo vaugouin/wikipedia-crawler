@@ -204,14 +204,42 @@ def _is_ui_chrome_file(title: str) -> bool:
 # 8504 of them into MAIN_IMAGE_URL. Strip the prefix before matching.
 _THUMB_PREFIX = re.compile(r"^(lang[a-z-]+-)?\d+px-", re.IGNORECASE)
 
+# Conventions that appear ANYWHERE in the name, not at its start, so they are matched
+# with search() instead of match(). Both were derived from production counts, not
+# guessed: a survey of T_WC_WIKIPEDIA_PAGE_LANG_IMAGE returned 163k rows the anchored
+# patterns missed, and these two rules cover every one of the 78 distinct filenames it
+# listed, with no false positive on 21 known-legitimate images.
+#
+#   disambig            Logo_disambig.svg alone accounts for 158212 of those rows: the
+#                       frwiki disambiguation banner, on every disambiguation page.
+#   *_icon.(svg|png)    the portal-icon convention: Drama_film_icon, Gold_medal_icon,
+#                       Canadian_television_stub_icon, ... A file that calls itself an
+#                       icon is declaring what it is. Two of them are real photographs
+#                       (a Big Ben shot, a Dall-e render) that only this suffix betrays,
+#                       the same trap as Apollo_11_Crew.jpg.
+#
+# Deliberately narrow: the extension is required, so "Icon_of_Christ_Pantocrator.jpg"
+# and any other subject whose name merely contains "icon" is left alone.
+#
+# The optional second extension is not cosmetic: a thumbnail of an icon is rendered as
+# "500px-Drama_film_icon.svg.png", so an end-anchor on a single extension misses every
+# thumbnail. Third time the same lesson today, after the space-vs-underscore bug and the
+# NNNpx- prefix: the pattern was right, the string it met was not the one assumed.
+_UI_CHROME_SUFFIX_PATTERNS = [
+    re.compile(r"disambig", re.IGNORECASE),
+    re.compile(r"_icon\.(svg|png)(\.(svg|png))?$", re.IGNORECASE),
+]
+
 
 def _matches_chrome(name: str) -> bool:
-    """Apply both pattern lists to an already-normalized bare filename."""
+    """Apply the three pattern lists to an already-normalized bare filename."""
     arrcandidats = [name]
     strsansprefixe = _THUMB_PREFIX.sub("", name, count=1)
     if strsansprefixe != name:
         arrcandidats.append(strsansprefixe)
     for strnom in arrcandidats:
+        if any(p.search(strnom) for p in _UI_CHROME_SUFFIX_PATTERNS):
+            return True
         if any(p.match(strnom) for p in _UI_CHROME_PATTERNS):
             return True
         # The extension test looks at the ORIGINAL name: a thumbnail of an icon is a
