@@ -101,7 +101,10 @@ _UI_CHROME_PATTERNS = [
         r"Wikiversity|Wikivoyage|Wiktionary|Wikimedia|Wikipedia)-logo",
         re.IGNORECASE,
     ),
-    re.compile(r"^(Padlock|Lock)-", re.IGNORECASE),
+    # Page-protection padlocks only. "Lock-of-Youth.jpg" and "Lock-jaw_2857.jpg"
+    # are real images; the padlocks are always colour-named.
+    re.compile(r"^(Padlock|Lock)-(green|blue|red|yellow|silver|gray|grey|pink|"
+               r"purple|black|white|semi|full|protect|move|office|pp)", re.IGNORECASE),
     re.compile(r"^(Ambox|Imbox|Tmbox|Cmbox|Ombox|Fmbox)", re.IGNORECASE),
     re.compile(r"^Stub_icon", re.IGNORECASE),
     re.compile(r"^Disambig", re.IGNORECASE),
@@ -111,29 +114,54 @@ _UI_CHROME_PATTERNS = [
     # stored "illustration" on a real entity (audit 2026-07-27: 10 of 46 sampled
     # entities carried UI chrome instead of a picture of their subject).
     re.compile(r"^\d{4}-[a-z]{2}\.wp-", re.IGNORECASE),       # 2017-fr.wp-orange-source.svg (fr maintenance)
-    re.compile(r"^(Edit|Merge|Split)-", re.IGNORECASE),
-    re.compile(r"^(Information|Warning|Error|Sound|Speaker)[-_]?icon", re.IGNORECASE),
-    re.compile(r"^Text_document", re.IGNORECASE),
+    re.compile(r"^Edit-(clear|copy|undo|redo|paste|cut|find)", re.IGNORECASE),
+    re.compile(r"^(Merge|Split)-(arrow|split|transwiki)", re.IGNORECASE),
+    re.compile(r"^(Information|Warning|Error)[-_]?icon", re.IGNORECASE),
+    re.compile(r"^Text_document_with", re.IGNORECASE),
     re.compile(r"^Cscr-", re.IGNORECASE),                     # featured/good article stars
-    re.compile(r"^Translation_", re.IGNORECASE),
+    re.compile(r"^Translation_(to_[a-z]{2,}_)?arrow", re.IGNORECASE),
     re.compile(r"^(Increase|Decrease|Steady)2?\.svg$", re.IGNORECASE),
-    re.compile(r"^(Yes_check|X_mark|Checkmark)", re.IGNORECASE),
+    re.compile(r"^Yes_check[._]", re.IGNORECASE),
+    re.compile(r"^X_mark[._]", re.IGNORECASE),                # NOT X_Marks_the_Spot_poster.jpg
+    re.compile(r"^Magnify-clip", re.IGNORECASE),
+    re.compile(r"^Broom_icon", re.IGNORECASE),                # NOT Broome_LGA_WA.png
+    re.compile(r"^Searchtool[._]", re.IGNORECASE),
+    re.compile(r"^Speaker_Icon[._]", re.IGNORECASE),
 ]
 
-# Icon-set families whose leading token is ALSO a perfectly ordinary human name or
-# common noun: "Crystal_Pite.jpg" is a choreographer, "Crystal_energy.svg" is the
-# KDE Crystal icon set. Matching on the name alone deleted real portraits during
-# the first production dry run of WIKIPEDIA-CRAWLER-019 (Crystal Allen, Crystal
-# Pite). These patterns therefore only count as chrome when the file is a vector
-# or flat-graphic type: icon sets ship .svg/.png, photographs of people are .jpg.
+# Icon-set families whose leading token is ALSO an ordinary word, a proper noun or
+# a subject in its own right. The whole difficulty of this filter lives here, and
+# both production dry runs of WIKIPEDIA-CRAWLER-019 were needed to map it:
+#
+#   run 1  "Crystal_Pite.jpg" (a choreographer) matched a pattern meant for the
+#          KDE Crystal icon set.
+#   run 2  "Emblem_of_New_Caledonia.svg", "Symbol_of_Tokyo_Metropolis.svg",
+#          "X_Marks_the_Spot_poster.jpg", "Portal_2_Official_Logo.png",
+#          "GNOME_Shell.png", "Broome_LGA_WA.png", "Crystal_Waters_-_Storyteller
+#          _cover.png" matched patterns meant for icon sets and Wikipedia badges.
+#
+# Hence: never match on the family name alone. Match the icon-set members the
+# projects actually ship, and let everything else through. Missing some chrome is
+# cheap (one wrong thumbnail); deleting a national emblem or a film poster is not.
 _UI_CHROME_ICONSET_PATTERNS = [
-    re.compile(r"^(Blue|Red|Green)_pencil", re.IGNORECASE),   # edit pencil, seen on 4836
-    re.compile(r"^Symbol_", re.IGNORECASE),                   # Symbol_category_class.svg & friends
-    re.compile(r"^Nuvola[-_]", re.IGNORECASE),
-    re.compile(r"^Crystal[-_]", re.IGNORECASE),
-    re.compile(r"^(Gnome|Oxygen|Emblem)[-_]", re.IGNORECASE),
-    re.compile(r"^Portal[-_]", re.IGNORECASE),
-    re.compile(r"^(Broom|Searchtool|Magnify)", re.IGNORECASE),
+    re.compile(r"^(Blue|Red|Green)_pencil", re.IGNORECASE),
+    re.compile(r"^Nuvola[-_]", re.IGNORECASE),                # no ordinary word collides
+    # KDE Crystal / Crystal Clear / Crystal Project icon sets, never "Crystal <name>"
+    re.compile(r"^Crystal_(Clear|Project|128|kcontrol|kpackage|energy|personal)[._]",
+               re.IGNORECASE),
+    # freedesktop/GNOME icon themes ship Gnome-<category>-*, articles about the
+    # desktop use "GNOME_..." or "Gnome_logo"
+    re.compile(r"^Gnome-(mime|dev|fs|applications|document|settings|system|"
+               r"searchtool|globe|html|text|audio|video|image|colors)", re.IGNORECASE),
+    re.compile(r"^Oxygen\d", re.IGNORECASE),                  # Oxygen480-* icon theme
+    re.compile(r"^Emblem-", re.IGNORECASE),                   # NOT Emblem_of_<country>
+    # Wikipedia assessment badges and vote pips, never "Symbol of <a real thing>"
+    re.compile(r"^Symbol_\w+_(class|vote)[._]", re.IGNORECASE),
+    re.compile(r"^Symbol_(confirmed|question|redirect|neutral|merge|move|comment|"
+               r"declined|related)[._]", re.IGNORECASE),
+    # Portal navigation icons, NOT "Portal 2" the game
+    re.compile(r"^Portal-puzzle", re.IGNORECASE),
+    re.compile(r"^Portal_[\w%.]+_[Ii]con\.svg$", re.IGNORECASE),
 ]
 
 _ICONSET_EXTENSIONS = (".svg", ".png")

@@ -39,7 +39,7 @@ cwd = os.getcwd()
 # to shared resume-state server variables so the main wikipedia-crawler
 # container can keep running 202 (person) in parallel without corruption.
 intquickmode = True
-#intquickmode = False
+intquickmode = False
 #arrquickprocessids = {205, 218, 223}
 #arrquickprocessids = {220, 222}
 # Ordered from least-recently-updated to most-recently-updated ITEM_TYPE in
