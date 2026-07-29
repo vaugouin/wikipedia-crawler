@@ -81,10 +81,31 @@ def main() -> None:
                 return
             cursor.execute(
                 f"ALTER TABLE {TABLE} "
-                f"ADD COLUMN {COLUMN} varchar(500) DEFAULT NULL AFTER WIKIPEDIA_PAGE_URL"
+                f"ADD COLUMN {COLUMN} varchar(1000) DEFAULT NULL AFTER WIKIPEDIA_PAGE_URL"
             )
             connection.commit()
-            print(f"  -> column added")
+            print("  -> column added")
+        else:
+            # First cut of this migration created the column as varchar(500), copying the
+            # V1 size. That was too narrow: V1 only ever stored lead-image URLs, which
+            # get_wikipedia_main_image_url strips of their query string, while the gallery
+            # keeps the ?utm_source=...&utm_campaign=imageinfo tracking parameters the
+            # imageinfo API appends (about 70 extra characters). The backfill reads the
+            # gallery, so it hit "Data too long for column". Widen in place if needed.
+            cursor.execute(
+                "SELECT CHARACTER_MAXIMUM_LENGTH AS L FROM information_schema.COLUMNS "
+                "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = %s AND COLUMN_NAME = %s",
+                (TABLE, COLUMN),
+            )
+            lnglen = (cursor.fetchone() or {}).get("L") or 0
+            if lnglen and lnglen < 1000:
+                print(f"  column is varchar({lnglen}), too narrow for gallery URLs")
+                if not args.apply:
+                    print("  Dry run. Re-run with --apply to widen it to varchar(1000).")
+                    return
+                cursor.execute(f"ALTER TABLE {TABLE} MODIFY {COLUMN} varchar(1000) DEFAULT NULL")
+                connection.commit()
+                print("  -> widened to varchar(1000)")
 
         if not args.backfill:
             print("No backfill requested (existing rows stay NULL). "
@@ -105,15 +126,20 @@ def main() -> None:
             print("Dry run. Re-run with --apply --backfill to fill them.")
             return
 
+        # SUBSTRING_INDEX(..., '?', 1) drops the imageinfo tracking parameters, exactly
+        # what get_wikipedia_main_image_url does on the lead-image path. They are noise,
+        # they break URL equality between the two stores, and they are what overflowed
+        # the column on the first run.
         cursor.execute(
             f"UPDATE {TABLE} p "
             f"JOIN ("
-            f"  SELECT ID_WIKIDATA, LANG, MIN(IMAGE_URL) AS IMAGE_URL "
+            f"  SELECT ID_WIKIDATA, LANG, "
+            f"         MIN(SUBSTRING_INDEX(IMAGE_URL, '?', 1)) AS IMAGE_URL "
             f"  FROM {GALLERY} WHERE IS_MAIN_IMAGE = 1 AND DELETED = 0 "
             f"  GROUP BY ID_WIKIDATA, LANG"
             f") g ON g.ID_WIKIDATA = p.ID_WIKIDATA AND g.LANG = p.LANG "
             f"SET p.{COLUMN} = g.IMAGE_URL "
-            f"WHERE p.{COLUMN} IS NULL"
+            f"WHERE p.{COLUMN} IS NULL AND CHAR_LENGTH(g.IMAGE_URL) <= 1000"
         )
         connection.commit()
         print(f"  -> backfilled {cursor.rowcount} row(s). Rows whose page has no flagged "
