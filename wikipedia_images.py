@@ -110,20 +110,33 @@ _UI_CHROME_PATTERNS = [
     # WIKIPEDIA-CRAWLER-019 additions. Every pattern below was observed as a
     # stored "illustration" on a real entity (audit 2026-07-27: 10 of 46 sampled
     # entities carried UI chrome instead of a picture of their subject).
-    re.compile(r"^(Blue|Red|Green)_pencil", re.IGNORECASE),   # edit pencil, seen on 4836
-    re.compile(r"^Symbol_", re.IGNORECASE),                   # Symbol_category_class.svg & friends
     re.compile(r"^\d{4}-[a-z]{2}\.wp-", re.IGNORECASE),       # 2017-fr.wp-orange-source.svg (fr maintenance)
     re.compile(r"^(Edit|Merge|Split)-", re.IGNORECASE),
-    re.compile(r"^(Nuvola|Crystal|Gnome|Oxygen|Emblem)[-_]", re.IGNORECASE),
     re.compile(r"^(Information|Warning|Error|Sound|Speaker)[-_]?icon", re.IGNORECASE),
     re.compile(r"^Text_document", re.IGNORECASE),
-    re.compile(r"^Portal[-_]", re.IGNORECASE),
     re.compile(r"^Cscr-", re.IGNORECASE),                     # featured/good article stars
-    re.compile(r"^(Broom|Searchtool|Magnify)", re.IGNORECASE),
     re.compile(r"^Translation_", re.IGNORECASE),
     re.compile(r"^(Increase|Decrease|Steady)2?\.svg$", re.IGNORECASE),
     re.compile(r"^(Yes_check|X_mark|Checkmark)", re.IGNORECASE),
 ]
+
+# Icon-set families whose leading token is ALSO a perfectly ordinary human name or
+# common noun: "Crystal_Pite.jpg" is a choreographer, "Crystal_energy.svg" is the
+# KDE Crystal icon set. Matching on the name alone deleted real portraits during
+# the first production dry run of WIKIPEDIA-CRAWLER-019 (Crystal Allen, Crystal
+# Pite). These patterns therefore only count as chrome when the file is a vector
+# or flat-graphic type: icon sets ship .svg/.png, photographs of people are .jpg.
+_UI_CHROME_ICONSET_PATTERNS = [
+    re.compile(r"^(Blue|Red|Green)_pencil", re.IGNORECASE),   # edit pencil, seen on 4836
+    re.compile(r"^Symbol_", re.IGNORECASE),                   # Symbol_category_class.svg & friends
+    re.compile(r"^Nuvola[-_]", re.IGNORECASE),
+    re.compile(r"^Crystal[-_]", re.IGNORECASE),
+    re.compile(r"^(Gnome|Oxygen|Emblem)[-_]", re.IGNORECASE),
+    re.compile(r"^Portal[-_]", re.IGNORECASE),
+    re.compile(r"^(Broom|Searchtool|Magnify)", re.IGNORECASE),
+]
+
+_ICONSET_EXTENSIONS = (".svg", ".png")
 
 
 def _is_ui_chrome_file(title: str) -> bool:
@@ -144,7 +157,16 @@ def _is_ui_chrome_file(title: str) -> bool:
         return False
     name = title.split(":", 1)[1] if ":" in title else title
     name = name.replace(" ", "_")
-    return any(p.match(name) for p in _UI_CHROME_PATTERNS)
+    return _matches_chrome(name)
+
+
+def _matches_chrome(name: str) -> bool:
+    """Apply both pattern lists to an already-normalized bare filename."""
+    if any(p.match(name) for p in _UI_CHROME_PATTERNS):
+        return True
+    if name.lower().endswith(_ICONSET_EXTENSIONS):
+        return any(p.match(name) for p in _UI_CHROME_ICONSET_PATTERNS)
+    return False
 
 
 def is_ui_chrome_url(image_url: str) -> bool:
@@ -159,7 +181,7 @@ def is_ui_chrome_url(image_url: str) -> bool:
     if not image_url:
         return False
     name = urllib.parse.unquote(image_url.split("?", 1)[0].rsplit("/", 1)[-1])
-    return any(p.match(name.replace(" ", "_")) for p in _UI_CHROME_PATTERNS)
+    return _matches_chrome(name.replace(" ", "_"))
 
 
 def is_acceptable_main_image_url(image_url: str, allow_svg: bool = True) -> bool:

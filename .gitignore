@@ -7,7 +7,10 @@ serie
 __pycache__/
 .claude/
 archive/
-migrations/
+# migrations/ is versioned since WIKIPEDIA-CRAWLER-019: these scripts operate on
+# real production data, so they belong in the history and must reach the VPS by
+# git pull like the rest of the code. __pycache__/ above already keeps the
+# compiled artifacts out.
 
 # Claude Code / agent local tooling
 .agents/
