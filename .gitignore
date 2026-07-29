@@ -14,3 +14,9 @@ archive/
 
 # Claude Code / agent local tooling
 .agents/
+
+# Diagnostic dumps and migration traces, produced at run time (usually on the VPS).
+# They are outputs, never source. Listed here so `git add -A` cannot sweep them in:
+# it already did once, shared-images.txt in commit 7f37bf6.
+/shared-images.txt
+/*.csv
