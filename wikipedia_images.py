@@ -194,12 +194,32 @@ def _is_ui_chrome_file(title: str) -> bool:
     return _matches_chrome(name)
 
 
+# Wikimedia thumbnail URLs prefix the source filename with a width, and localized
+# renderings prefix that with a language tag:
+#     .../thumb/3/3d/Blue_pencil.svg/langfr-960px-Blue_pencil.svg.png
+# The bare name is then "langfr-960px-Blue_pencil.svg.png", which no ^-anchored
+# pattern can match. Every pattern here is anchored, so before WIKIPEDIA-CRAWLER-021
+# the filter saw the direct URL of a chrome file and missed every thumbnail of it:
+# 163495 rows survived the cleanup in the gallery alone, and the backfill then copied
+# 8504 of them into MAIN_IMAGE_URL. Strip the prefix before matching.
+_THUMB_PREFIX = re.compile(r"^(lang[a-z-]+-)?\d+px-", re.IGNORECASE)
+
+
 def _matches_chrome(name: str) -> bool:
     """Apply both pattern lists to an already-normalized bare filename."""
-    if any(p.match(name) for p in _UI_CHROME_PATTERNS):
-        return True
-    if name.lower().endswith(_ICONSET_EXTENSIONS):
-        return any(p.match(name) for p in _UI_CHROME_ICONSET_PATTERNS)
+    arrcandidats = [name]
+    strsansprefixe = _THUMB_PREFIX.sub("", name, count=1)
+    if strsansprefixe != name:
+        arrcandidats.append(strsansprefixe)
+    for strnom in arrcandidats:
+        if any(p.match(strnom) for p in _UI_CHROME_PATTERNS):
+            return True
+        # The extension test looks at the ORIGINAL name: a thumbnail of an icon is a
+        # .png rendering of a .svg, and both are flat graphics, so the icon-set rule
+        # holds either way.
+        if strnom.lower().endswith(_ICONSET_EXTENSIONS) or name.lower().endswith(_ICONSET_EXTENSIONS):
+            if any(p.match(strnom) for p in _UI_CHROME_ICONSET_PATTERNS):
+                return True
     return False
 
 
