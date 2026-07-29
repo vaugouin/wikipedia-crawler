@@ -236,56 +236,30 @@ def f_writelangtodb(payload, lngid, wikidata_id, strlanguage, strcontent, intind
 
     try:
         arrpageimages = payload["page_images"]
-        if not strmainimageurl and strimagetable != "" and strimagecolumn != "" and len(arrpageimages) > 0:
-            # WIKIPEDIA-CRAWLER-019: take the first image that can plausibly BE the
-            # subject, not merely the first image on the page. What sits at the top
-            # of an article is often template decoration, which is exactly how edit
-            # pencils and maintenance banners became stored "illustrations". SVG is
-            # excluded here (but not on the summary path): this deep in an article a
-            # vector file is decoration far more often than it is the subject.
-            # Storing nothing is the honest outcome when nothing qualifies.
-            strmainimageurl = next(
-                (img.get("image_url") or "" for img in arrpageimages
-                 if wimg.is_acceptable_main_image_url(img.get("image_url") or "", allow_svg=False)),
-                "",
-            )
-            if strmainimageurl:
-                print("Main image fallback (first usable page image):", strmainimageurl)
-                # A fallback must never overwrite a value already in place. This
-                # function runs once PER language, in ("en", "fr") order, while the
-                # main-image column is shared across languages. Collection 4845 is the
-                # case that exposed it: the English page yields a real lead image (the
-                # Man-with-No-Name blu-ray cover), then the French page has no lead
-                # image, falls back to the first picture on the article, and overwrote
-                # the cover with Apollo_11_Crew.jpg, a decade-portal icon that sits at
-                # the top of frwiki articles. A guess must not displace a real lead
-                # image, so the write is conditional on the column being empty.
-                #
-                # Deliberately a plain UPDATE and NOT f_sqlupdatearray: that helper runs
-                # `SELECT ... WHERE <condition>` and INSERTs when the condition matches
-                # nothing, so folding the emptiness test into its condition would create
-                # a duplicate row on every entity that already has an image.
-                try:
-                    cursor2.execute(
-                        f"UPDATE {strimagetable} "
-                        f"SET {strimagecolumn} = %s, TIM_UPDATED = %s "
-                        f"WHERE ID_WIKIDATA = %s "
-                        f"  AND ({strimagecolumn} IS NULL OR {strimagecolumn} = '')",
-                        (strmainimageurl,
-                         datetime.now(cp.paris_tz).strftime("%Y-%m-%d %H:%M:%S"),
-                         wikidata_id),
-                    )
-                    cp.connectioncp.commit()
-                    if cursor2.rowcount == 0:
-                        print(f"  (kept the existing main image for {wikidata_id}: "
-                              f"a fallback never overwrites one)")
-                except Exception as err:
-                    print(f"Main image fallback write error for {wikidata_id} "
-                          f"({strlanguage}): {err}")
-            else:
-                print(f"No usable main image for {wikidata_id} ({strlanguage}): "
-                      f"{len(arrpageimages)} page image(s), none qualified. "
-                      f"Leaving the column untouched.")
+        # WIKIPEDIA-CRAWLER-019 (correctif B): there is deliberately NO first-page-image
+        # fallback any more. Only the lead image resolved by the REST summary endpoint
+        # above is ever stored as an entity's main image; when there is none, the column
+        # is left exactly as it was.
+        #
+        # The fallback took "the first image on the article" as the subject, and on a
+        # Wikipedia article the top of the page belongs to the templates, not to the
+        # subject. It produced the great majority of the 1.25M UI-chrome images cleared
+        # by migrations/clear_ui_chrome_images.py, Blue_pencil.svg alone accounting for
+        # 33734 of the 38136 wrong movie posters.
+        #
+        # Filtering the chrome out was not enough, and collections 4840/4845 are why:
+        # on frwiki the decade-portal banner carries Apollo_11_Crew.jpg, a genuine
+        # photograph correctly named, which no filename filter can tell from a real
+        # illustration. Filtering only turned visible garbage (an edit pencil) into
+        # plausible garbage (astronauts on a Sergio Leone trilogy), which is worse:
+        # a wrong image that looks right is read as fact.
+        #
+        # Consequence, accepted: entities whose Wikipedia page has no lead image now
+        # keep no main image at all. An empty illustration is honest; a guess is not.
+        if not strmainimageurl and strimagetable != "" and strimagecolumn != "":
+            print(f"No lead image for {wikidata_id} ({strlanguage}): "
+                  f"{len(arrpageimages)} page image(s) available, none used as main "
+                  f"image (no fallback by design). Column left untouched.")
         # In-place bulk upsert keyed by the (ID_WIKIDATA, LANG, DISPLAY_ORDER)
         # unique index (added by migrations/add_unique_section_image_keys.py),
         # then prune any stale tail rows beyond the current image count. The

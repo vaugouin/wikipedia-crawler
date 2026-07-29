@@ -218,24 +218,21 @@ def is_ui_chrome_url(image_url: str) -> bool:
     return _matches_chrome(name.replace(" ", "_"))
 
 
-def is_acceptable_main_image_url(image_url: str, allow_svg: bool = True) -> bool:
+def is_acceptable_main_image_url(image_url: str) -> bool:
     """Return True if ``image_url`` may be stored as an entity's main image.
 
-    Stricter than the gallery filter, because a main image stands alone: a wrong
-    one is read as a statement about the subject, while a wrong gallery item is
-    merely noise. Rejects UI chrome always. With ``allow_svg=False`` it also
-    rejects SVG, which is the right bar for the *fallback* path (first surviving
-    page image): a vector file that deep in an article is decoration far more
-    often than it is the subject. The lead image returned by the REST summary
-    endpoint is chosen by MediaWiki itself, so SVG is tolerated there.
+    Applied to the lead image returned by the REST summary endpoint, which is the
+    only source of main images since WIKIPEDIA-CRAWLER-019 removed the
+    first-page-image fallback. That lead image is chosen by MediaWiki itself, so
+    the only thing left to reject is the occasional maintenance banner or edit
+    icon that surfaces as a page's ``originalimage``.
+
+    (An ``allow_svg`` parameter used to gate the fallback path more strictly. It
+    went away with the fallback: a lead image may legitimately be a vector logo.)
     """
     if not image_url:
         return False
-    if is_ui_chrome_url(image_url):
-        return False
-    if not allow_svg and image_url.split("?", 1)[0].lower().endswith(".svg"):
-        return False
-    return True
+    return not is_ui_chrome_url(image_url)
 
 
 def _get_wikipedia_page_media_items(title: str, lang: str) -> list[dict]:

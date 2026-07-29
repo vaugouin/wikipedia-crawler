@@ -224,10 +224,15 @@ When configured, the main image URL is written back to a content-specific Wikida
 Wikipedia articles embed template decoration that is not the subject: edit pencils, maintenance banners, project logos, stub markers, featured-article stars. The crawler filters these out with `_UI_CHROME_PATTERNS` / `_is_ui_chrome_file` in `wikipedia_images.py`, at three points:
 
 1. **Page-image enumeration** : chrome `File:` titles are dropped before the `imageinfo` step, so they never reach `T_WC_WIKIPEDIA_PAGE_LANG_IMAGE` (and it saves an API call per 50 files filtered).
-2. **Lead image** : the REST summary endpoint occasionally returns a maintenance banner as `originalimage`. `is_acceptable_main_image_url()` rejects it and lets the fallback look for a real picture.
-3. **Fallback** : when no lead image exists, the crawler picks the first page image that can plausibly *be* the subject, not merely the first image on the page. SVG is excluded **here only** (`allow_svg=False`): that deep in an article a vector file is decoration far more often than it is the subject, whereas a lead image chosen by MediaWiki itself may legitimately be an SVG logo.
+2. **Lead image** : the REST summary endpoint occasionally returns a maintenance banner as `originalimage`. `is_acceptable_main_image_url()` rejects it, and the column is then left untouched.
 
-When nothing qualifies, the crawler **writes nothing and leaves the column untouched**. An empty illustration is honest; an edit pencil presented as a film poster is not.
+#### No first-page-image fallback (removed)
+
+The crawler used to fall back to "the first image on the article" when a page had no lead image. That fallback is **gone**, and this is deliberate: on a Wikipedia article the top of the page belongs to the templates, not to the subject. It produced the great majority of the 1.25M UI-chrome images cleared by [`migrations/clear_ui_chrome_images.py`](migrations/clear_ui_chrome_images.py), `Blue_pencil.svg` alone accounting for 33 734 of the 38 136 wrong movie posters.
+
+Filtering the chrome out was not enough. On frwiki the decade-portal banner carries `Apollo_11_Crew.jpg`, a genuine photograph correctly named, which no filename filter can tell from a real illustration: that is how two Sergio Leone trilogies ended up illustrated with the Apollo 11 crew. Filtering only turned visible garbage (an edit pencil) into plausible garbage (astronauts on a spaghetti western), which is worse, because a wrong image that looks right is read as fact.
+
+**Accepted consequence:** an entity whose Wikipedia page has no lead image now keeps **no main image at all**. An empty illustration is honest; a guess is not. Coverage is therefore lower than before, by design.
 
 Titles are normalized (spaces to underscores) before matching, because the Action API returns display form (`File:OOjs UI icon edit-ltr-progressive.svg`) while upload URLs and the patterns use underscores. Skipping that normalization is what made the filter inert before WIKIPEDIA-CRAWLER-019.
 
