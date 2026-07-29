@@ -93,6 +93,13 @@ def f_fetchlangpayload(session, wikidata_id, page_title, strkey, strlanguage, ne
     if needs_image:
         try:
             strmainimageurl = wimg.get_wikipedia_main_image_url(page_title, strlanguage)
+            # WIKIPEDIA-CRAWLER-019: the summary endpoint occasionally returns a
+            # maintenance banner or an edit icon as the "lead" image. Storing it
+            # states something false about the subject, so drop it and let the
+            # fallback below look for a real picture.
+            if strmainimageurl and not wimg.is_acceptable_main_image_url(strmainimageurl):
+                print(f"Main image rejected (UI chrome) for {wikidata_id} ({strlanguage}): {strmainimageurl}")
+                strmainimageurl = ""
             if strmainimageurl:
                 payload["main_image_url"] = strmainimageurl
         except Exception as err:
@@ -230,9 +237,23 @@ def f_writelangtodb(payload, lngid, wikidata_id, strlanguage, strcontent, intind
     try:
         arrpageimages = payload["page_images"]
         if not strmainimageurl and strimagetable != "" and strimagecolumn != "" and len(arrpageimages) > 0:
-            strmainimageurl = arrpageimages[0].get("image_url") or ""
+            # WIKIPEDIA-CRAWLER-019: take the first image that can plausibly BE the
+            # subject, not merely the first image on the page. What sits at the top
+            # of an article is often template decoration, which is exactly how edit
+            # pencils and maintenance banners became stored "illustrations". SVG is
+            # excluded here (but not on the summary path): this deep in an article a
+            # vector file is decoration far more often than it is the subject.
+            # Storing nothing is the honest outcome when nothing qualifies.
+            strmainimageurl = next(
+                (img.get("image_url") or "" for img in arrpageimages
+                 if wimg.is_acceptable_main_image_url(img.get("image_url") or "", allow_svg=False)),
+                "",
+            )
             if strmainimageurl:
-                print("Main image fallback (first page image):", strmainimageurl)
+                print("Main image fallback (first usable page image):", strmainimageurl)
+            else:
+                print(f"No usable main image for {wikidata_id} ({strlanguage}): "
+                      f"{len(arrpageimages)} page image(s), none qualified. Leaving the column untouched.")
                 arrcouples = {}
                 arrcouples["ID_WIKIDATA"] = wikidata_id
                 arrcouples[strimagecolumn] = strmainimageurl

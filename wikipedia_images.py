@@ -107,6 +107,22 @@ _UI_CHROME_PATTERNS = [
     re.compile(r"^Disambig", re.IGNORECASE),
     re.compile(r"^Question_book", re.IGNORECASE),
     re.compile(r"^Wiki_letter_w", re.IGNORECASE),
+    # WIKIPEDIA-CRAWLER-019 additions. Every pattern below was observed as a
+    # stored "illustration" on a real entity (audit 2026-07-27: 10 of 46 sampled
+    # entities carried UI chrome instead of a picture of their subject).
+    re.compile(r"^(Blue|Red|Green)_pencil", re.IGNORECASE),   # edit pencil, seen on 4836
+    re.compile(r"^Symbol_", re.IGNORECASE),                   # Symbol_category_class.svg & friends
+    re.compile(r"^\d{4}-[a-z]{2}\.wp-", re.IGNORECASE),       # 2017-fr.wp-orange-source.svg (fr maintenance)
+    re.compile(r"^(Edit|Merge|Split)-", re.IGNORECASE),
+    re.compile(r"^(Nuvola|Crystal|Gnome|Oxygen|Emblem)[-_]", re.IGNORECASE),
+    re.compile(r"^(Information|Warning|Error|Sound|Speaker)[-_]?icon", re.IGNORECASE),
+    re.compile(r"^Text_document", re.IGNORECASE),
+    re.compile(r"^Portal[-_]", re.IGNORECASE),
+    re.compile(r"^Cscr-", re.IGNORECASE),                     # featured/good article stars
+    re.compile(r"^(Broom|Searchtool|Magnify)", re.IGNORECASE),
+    re.compile(r"^Translation_", re.IGNORECASE),
+    re.compile(r"^(Increase|Decrease|Steady)2?\.svg$", re.IGNORECASE),
+    re.compile(r"^(Yes_check|X_mark|Checkmark)", re.IGNORECASE),
 ]
 
 
@@ -114,14 +130,56 @@ def _is_ui_chrome_file(title: str) -> bool:
     """Return True if ``title`` is a MediaWiki UI/template-decoration file.
 
     ``title`` is the namespaced title returned by the Action API
-    (e.g. ``"File:OOjs_UI_icon_edit-ltr-progressive.svg"`` on enwiki or
+    (e.g. ``"File:OOjs UI icon edit-ltr-progressive.svg"`` on enwiki or
     ``"Fichier:Commons-logo.svg"`` on frwiki); the namespace prefix is stripped
     before matching so the filter works across language editions.
+
+    Spaces are normalized to underscores first. The Action API returns titles in
+    display form (``"File:OOjs UI icon edit-ltr-progressive.svg"``) while upload
+    URLs use underscores, and every pattern here is written in underscore form.
+    Without this the filter silently matched nothing on the Action API path,
+    which is why it never caught anything before WIKIPEDIA-CRAWLER-019.
     """
     if not title:
         return False
     name = title.split(":", 1)[1] if ":" in title else title
+    name = name.replace(" ", "_")
     return any(p.match(name) for p in _UI_CHROME_PATTERNS)
+
+
+def is_ui_chrome_url(image_url: str) -> bool:
+    """Return True if ``image_url`` points at MediaWiki UI/template decoration.
+
+    URL-facing twin of ``_is_ui_chrome_file``, for callers that hold an upload
+    URL rather than a namespaced ``File:`` title (the page writer, and the
+    migration that cleans values already stored in the database). The filename
+    is taken from the last path segment and URL-decoded, because stored URLs
+    percent-encode non-ASCII names.
+    """
+    if not image_url:
+        return False
+    name = urllib.parse.unquote(image_url.split("?", 1)[0].rsplit("/", 1)[-1])
+    return any(p.match(name.replace(" ", "_")) for p in _UI_CHROME_PATTERNS)
+
+
+def is_acceptable_main_image_url(image_url: str, allow_svg: bool = True) -> bool:
+    """Return True if ``image_url`` may be stored as an entity's main image.
+
+    Stricter than the gallery filter, because a main image stands alone: a wrong
+    one is read as a statement about the subject, while a wrong gallery item is
+    merely noise. Rejects UI chrome always. With ``allow_svg=False`` it also
+    rejects SVG, which is the right bar for the *fallback* path (first surviving
+    page image): a vector file that deep in an article is decoration far more
+    often than it is the subject. The lead image returned by the REST summary
+    endpoint is chosen by MediaWiki itself, so SVG is tolerated there.
+    """
+    if not image_url:
+        return False
+    if is_ui_chrome_url(image_url):
+        return False
+    if not allow_svg and image_url.split("?", 1)[0].lower().endswith(".svg"):
+        return False
+    return True
 
 
 def _get_wikipedia_page_media_items(title: str, lang: str) -> list[dict]:

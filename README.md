@@ -219,6 +219,20 @@ Fields written include:
 ### Image URL enrichment
 When configured, the main image URL is written back to a content-specific Wikidata table.
 
+#### UI-chrome filtering (which image is allowed to be the main image)
+
+Wikipedia articles embed template decoration that is not the subject: edit pencils, maintenance banners, project logos, stub markers, featured-article stars. The crawler filters these out with `_UI_CHROME_PATTERNS` / `_is_ui_chrome_file` in `wikipedia_images.py`, at three points:
+
+1. **Page-image enumeration** : chrome `File:` titles are dropped before the `imageinfo` step, so they never reach `T_WC_WIKIPEDIA_PAGE_LANG_IMAGE` (and it saves an API call per 50 files filtered).
+2. **Lead image** : the REST summary endpoint occasionally returns a maintenance banner as `originalimage`. `is_acceptable_main_image_url()` rejects it and lets the fallback look for a real picture.
+3. **Fallback** : when no lead image exists, the crawler picks the first page image that can plausibly *be* the subject, not merely the first image on the page. SVG is excluded **here only** (`allow_svg=False`): that deep in an article a vector file is decoration far more often than it is the subject, whereas a lead image chosen by MediaWiki itself may legitimately be an SVG logo.
+
+When nothing qualifies, the crawler **writes nothing and leaves the column untouched**. An empty illustration is honest; an edit pencil presented as a film poster is not.
+
+Titles are normalized (spaces to underscores) before matching, because the Action API returns display form (`File:OOjs UI icon edit-ltr-progressive.svg`) while upload URLs and the patterns use underscores. Skipping that normalization is what made the filter inert before WIKIPEDIA-CRAWLER-019.
+
+Values written before the filter existed are cleaned by [`migrations/clear_ui_chrome_images.py`](migrations/clear_ui_chrome_images.py) (dry run by default, `--apply` to clear). Run it **after** deploying the code fix, otherwise a crawler still running the old code writes the chrome values straight back.
+
 For `item`, `other`, `list`, `movement`, `collection`, `group`, `death`, `award`, `nomination`, `topic`, and `technical`, the crawler writes to:
 
 - `T_WC_WIKIDATA_ITEM_V1.WIKIPEDIA_IMAGE_PATH`
