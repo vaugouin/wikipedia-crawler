@@ -251,14 +251,41 @@ def f_writelangtodb(payload, lngid, wikidata_id, strlanguage, strcontent, intind
             )
             if strmainimageurl:
                 print("Main image fallback (first usable page image):", strmainimageurl)
+                # A fallback must never overwrite a value already in place. This
+                # function runs once PER language, in ("en", "fr") order, while the
+                # main-image column is shared across languages. Collection 4845 is the
+                # case that exposed it: the English page yields a real lead image (the
+                # Man-with-No-Name blu-ray cover), then the French page has no lead
+                # image, falls back to the first picture on the article, and overwrote
+                # the cover with Apollo_11_Crew.jpg, a decade-portal icon that sits at
+                # the top of frwiki articles. A guess must not displace a real lead
+                # image, so the write is conditional on the column being empty.
+                #
+                # Deliberately a plain UPDATE and NOT f_sqlupdatearray: that helper runs
+                # `SELECT ... WHERE <condition>` and INSERTs when the condition matches
+                # nothing, so folding the emptiness test into its condition would create
+                # a duplicate row on every entity that already has an image.
+                try:
+                    cursor2.execute(
+                        f"UPDATE {strimagetable} "
+                        f"SET {strimagecolumn} = %s, TIM_UPDATED = %s "
+                        f"WHERE ID_WIKIDATA = %s "
+                        f"  AND ({strimagecolumn} IS NULL OR {strimagecolumn} = '')",
+                        (strmainimageurl,
+                         datetime.now(cp.paris_tz).strftime("%Y-%m-%d %H:%M:%S"),
+                         wikidata_id),
+                    )
+                    cp.connectioncp.commit()
+                    if cursor2.rowcount == 0:
+                        print(f"  (kept the existing main image for {wikidata_id}: "
+                              f"a fallback never overwrites one)")
+                except Exception as err:
+                    print(f"Main image fallback write error for {wikidata_id} "
+                          f"({strlanguage}): {err}")
             else:
                 print(f"No usable main image for {wikidata_id} ({strlanguage}): "
-                      f"{len(arrpageimages)} page image(s), none qualified. Leaving the column untouched.")
-                arrcouples = {}
-                arrcouples["ID_WIKIDATA"] = wikidata_id
-                arrcouples[strimagecolumn] = strmainimageurl
-                strsqlupdatecondition = f"ID_WIKIDATA = '{wikidata_id}'"
-                cp.f_sqlupdatearray(strimagetable, arrcouples, strsqlupdatecondition, 1)
+                      f"{len(arrpageimages)} page image(s), none qualified. "
+                      f"Leaving the column untouched.")
         # In-place bulk upsert keyed by the (ID_WIKIDATA, LANG, DISPLAY_ORDER)
         # unique index (added by migrations/add_unique_section_image_keys.py),
         # then prune any stale tail rows beyond the current image count. The
