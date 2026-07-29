@@ -33,9 +33,22 @@ code will write the chrome values straight back.
 
 Usage
 -----
-    python migrations/clear_ui_chrome_images.py            # dry run, reports only
-    python migrations/clear_ui_chrome_images.py --apply    # actually clears
-    python migrations/clear_ui_chrome_images.py --apply --limit 500
+    python migrations/clear_ui_chrome_images.py                      # dry run
+    python migrations/clear_ui_chrome_images.py --top 400            # inspect the long tail
+    python migrations/clear_ui_chrome_images.py --dump before.csv --apply
+
+Read the per-filename counts before --apply. Real chrome repeats thousands of
+times; a wrongly-matched real image appears once or twice, down in the tail that
+the default --top 12 hides. `--top 400` is the check that would have caught the
+Crystal false positives on their own.
+
+Soft-delete is NOT an option on the gallery table, and this is counter-intuitive
+enough to write down: `DELETED` is insert-only in citizenphil.f_sqlbulkupsert
+(see `insertonlystd`), so a row marked DELETED=1 would keep that flag when a
+later crawl writes a legitimate image at the same (ID_WIKIDATA, LANG,
+DISPLAY_ORDER). The good image would stay invisible for ever. A hard DELETE is
+re-inserted cleanly with DELETED=0 on the next crawl, so it is the safer of the
+two despite looking more brutal. Use --dump to keep a trace.
 """
 
 import argparse
@@ -99,13 +112,34 @@ def _print_breakdown(arrchrome, lngtop=12):
         print(f"    {'':>8}  ... and {lngrest} other distinct filename(s)")
 
 
+def _dump_rows(filedump, strtable, arrchrome):
+    """Append the matched rows to the CSV trace, when --dump was given."""
+    if filedump is None:
+        return
+    for rowid, url in arrchrome:
+        filedump.write('%s,%s,"%s"\n' % (strtable, rowid, url))
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--apply", action="store_true",
                         help="actually clear the values (default: report only)")
     parser.add_argument("--limit", type=int, default=0,
                         help="scan at most N rows per table (0 = all)")
+    parser.add_argument("--top", type=int, default=12,
+                        help="how many distinct filenames to list per table "
+                             "(use a large value to inspect the long tail, where a "
+                             "wrongly-matched real image would hide)")
+    parser.add_argument("--dump", metavar="FILE",
+                        help="write every matched row to a CSV (table,id,url) before "
+                             "touching anything. Strongly advised with --apply: the "
+                             "clearing is not reversible and the rows number in the millions")
     args = parser.parse_args()
+
+    filedump = None
+    if args.dump:
+        filedump = open(args.dump, "w", encoding="utf-8", newline="")
+        filedump.write("table,id,url\n")
 
     connection = cp.f_getconnection()
     lngtotalchrome = 0
@@ -120,7 +154,8 @@ def main() -> None:
             lngtotalchrome += len(arrchrome)
             strpct = f"{100 * len(arrchrome) / lngscanned:.1f}%" if lngscanned else "n/a"
             print(f"{strtable}.{strimagecol}: {len(arrchrome)} chrome / {lngscanned} non-empty ({strpct})")
-            _print_breakdown(arrchrome)
+            _print_breakdown(arrchrome, args.top)
+            _dump_rows(filedump, strtable, arrchrome)
             if args.apply and arrchrome:
                 for rowid, _url in arrchrome:
                     cursor.execute(
@@ -136,7 +171,8 @@ def main() -> None:
             lngscanned, arrchrome = _scan_column(cursor, strtable, stridcol, strimagecol, args.limit)
             lngtotalchrome += len(arrchrome)
             print(f"{strtable}.{strimagecol}: {len(arrchrome)} chrome / {lngscanned} non-empty")
-            _print_breakdown(arrchrome)
+            _print_breakdown(arrchrome, args.top)
+            _dump_rows(filedump, strtable, arrchrome)
             if args.apply and arrchrome:
                 for rowid, _url in arrchrome:
                     cursor.execute(f"DELETE FROM {strtable} WHERE {stridcol} = %s", (rowid,))
