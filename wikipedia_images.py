@@ -154,7 +154,13 @@ _UI_CHROME_ICONSET_PATTERNS = [
     re.compile(r"^Gnome-(mime|dev|fs|applications|document|settings|system|"
                r"searchtool|globe|html|text|audio|video|image|colors)", re.IGNORECASE),
     re.compile(r"^Oxygen\d", re.IGNORECASE),                  # Oxygen480-* icon theme
-    re.compile(r"^Emblem-", re.IGNORECASE),                   # NOT Emblem_of_<country>
+    # freedesktop "Emblem-*" overlay icons, enumerated. NOT Emblem_of_<country>,
+    # and NOT Emblem-Ramakrishna-Mission-Transparent.png either: a real emblem is
+    # free to use hyphens too, so the family name alone is not a safe signal.
+    re.compile(r"^Emblem-(money|risk|relax|question|web|WikiVote|important|notice|"
+               r"star|package|photos|documents|downloads|favorite|generic|mail|new|"
+               r"readonly|shared|system|unreadable|urgent|symbolic|art|music|video)",
+               re.IGNORECASE),
     # Wikipedia assessment badges and vote pips, never "Symbol of <a real thing>"
     re.compile(r"^Symbol_\w+_(class|vote)[._]", re.IGNORECASE),
     re.compile(r"^Symbol_(confirmed|question|redirect|neutral|merge|move|comment|"
