@@ -9,15 +9,24 @@
 --   2. clear_shared_main_images.py --min 50 --apply (images de portail, detectees par frequence)
 --   3. add_main_image_url_to_page_lang.py --apply --backfill (nouvelle colonne + remplissage)
 --
--- Les controles 20 et 21 ne portent pas sur une migration : ils disent ce qui RESTE a
--- faire (le preprocess n'a pas encore propage le nettoyage vers les copies T2S).
+-- Deux controles ne sont pas des reussites de migration :
+--   15 est un controle INVERSE : les visuels de series sous le seuil de 50 (Gumball,
+--      SpongeBob, Alice Comedies) doivent etre PRESERVES. Un 0 y serait une mauvaise
+--      nouvelle : il voudrait dire que le seuil a detruit des images legitimes.
+--   30 et 31 disent ce qui RESTE a faire en aval : le preprocess n'a pas encore
+--      propage le nettoyage vers les copies T2S servies au front et au voice-agent.
 --
 -- Duree : compter quelques minutes. Le controle 02 balaie T_WC_WIKIPEDIA_PAGE_LANG_IMAGE
 -- (8,5 M de lignes) avec une expression reguliere, sans index possible. C'est le seul
 -- long ; si le temps pose probleme, commenter son bloc.
 -- =====================================================================================
 
-SET @CHROME := 'Blue_pencil|OOjs_UI_icon|Question_book|Wiki_letter_w|Edit-clear|Edit-copy|Text_document_with|Crystal_Clear|Crystal_128|Crystal_Project|Crystal_energy|Crystal_personal|Crystal_kcontrol|Nuvola|Gnome-(mime|dev|fs|applications|document|searchtool|globe|html)|Ambox|Cscr-|Emblem-(money|risk|relax|question|web|WikiVote)|Symbol_[A-Za-z_]+_(class|vote)|2017-fr[.]wp-|Portal-puzzle|Portal_[A-Za-z_]+_[Ii]con[.]svg|Magnify-clip|Broom_icon|Searchtool[.]|Speaker_Icon[.]|Disambig|Increase2|Decrease2|Steady2?[.]svg|Yes_check[.]|X_mark[.]|Translation_([a-z_]*)arrow|Information_icon|Stub_icon|Oxygen[0-9]|(Commons|Wikidata|Wikiquote|Wikisource|Wiktionary|Wikinews|Wikipedia)-logo';
+-- La connexion doit parler la meme collation que les tables, sinon REGEXP echoue avec
+-- "Illegal mix of collations": une variable utilisateur herite de collation_connection
+-- (utf8mb4_general_ci par defaut) alors que les colonnes sont en utf8mb4_unicode_ci.
+SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+SET @CHROME := _utf8mb4'Blue_pencil|OOjs_UI_icon|Question_book|Wiki_letter_w|Edit-clear|Edit-copy|Text_document_with|Crystal_Clear|Crystal_128|Crystal_Project|Crystal_energy|Crystal_personal|Crystal_kcontrol|Nuvola|Gnome-(mime|dev|fs|applications|document|searchtool|globe|html)|Ambox|Cscr-|Emblem-(money|risk|relax|question|web|WikiVote)|Symbol_[A-Za-z_]+_(class|vote)|2017-fr[.]wp-|Portal-puzzle|Portal_[A-Za-z_]+_[Ii]con[.]svg|Magnify-clip|Broom_icon|Searchtool[.]|Speaker_Icon[.]|Disambig|Increase2|Decrease2|Steady2?[.]svg|Yes_check[.]|X_mark[.]|Translation_([a-z_]*)arrow|Information_icon|Stub_icon|Oxygen[0-9]|(Commons|Wikidata|Wikiquote|Wikisource|Wiktionary|Wikinews|Wikipedia)-logo' COLLATE utf8mb4_unicode_ci;
 
 SELECT * FROM (
 
