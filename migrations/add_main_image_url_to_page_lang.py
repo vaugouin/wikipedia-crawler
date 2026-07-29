@@ -34,10 +34,25 @@ flagged IS_MAIN_IMAGE = 1 in T_WC_WIKIPEDIA_PAGE_LANG_IMAGE for the same
 resolved lead image, so it never invents one. Rows whose page has no flagged image
 stay NULL, which is the honest state.
 
+`--backfill` is now self-repairing, in three steps:
+
+  1. RESET  values already stored that are UI chrome are blanked back to NULL. The
+            first backfill ran while the gallery still held thumbnail URLs of chrome
+            (WIKIPEDIA-CRAWLER-021) and copied 8504 of them in. Since the fill only
+            touches NULL rows, without this reset a re-run would leave every one of
+            them in place.
+  2. FILL   the backfill itself, unchanged.
+  3. VERIFY the column is re-read afterwards. If chrome came back, the gallery is
+            still dirty and the script says so, naming the command to run first.
+
+Order matters: clear_ui_chrome_images.py must be re-run BEFORE this script,
+otherwise step 3 will simply report that step 1 was undone by step 2.
+
 Usage
 -----
     python migrations/add_main_image_url_to_page_lang.py             # report only
     python migrations/add_main_image_url_to_page_lang.py --apply     # add the column
+    python migrations/add_main_image_url_to_page_lang.py --backfill          # dry run of all 3 steps
     python migrations/add_main_image_url_to_page_lang.py --apply --backfill
 """
 
@@ -48,6 +63,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import citizenphil as cp  # noqa: E402
+import wikipedia_images as wimg  # noqa: E402
 
 TABLE = "T_WC_WIKIPEDIA_PAGE_LANG"
 COLUMN = "MAIN_IMAGE_URL"
@@ -112,6 +128,42 @@ def main() -> None:
                   "The crawler fills them on its next pass.")
             return
 
+        # ---------------------------------------------------------------------------
+        # Reset first: a value this migration wrote wrongly is this migration's job to
+        # undo. The first backfill ran while the gallery still held thumbnail URLs of
+        # UI chrome (WIKIPEDIA-CRAWLER-021: the ^-anchored filter matched
+        # "Blue_pencil.svg" but not "langfr-960px-Blue_pencil.svg.png"), and copied
+        # 8504 of them in. Since the backfill only fills rows that are NULL, re-running
+        # it would leave every one of those in place. So blank them back to NULL first.
+        #
+        # Read DISTINCT urls, not rows: 790k rows collapse to a few thousand values, and
+        # the chrome test is the Python one, so there is a single source of truth for
+        # what counts as chrome (wikipedia_images._UI_CHROME_PATTERNS).
+        # ---------------------------------------------------------------------------
+        cursor.execute(
+            f"SELECT DISTINCT {COLUMN} AS U FROM {TABLE} "
+            f"WHERE {COLUMN} IS NOT NULL AND {COLUMN} <> ''"
+        )
+        arrurls = [r["U"] for r in cursor.fetchall()]
+        arrchrome = [u for u in arrurls if wimg.is_ui_chrome_url(u)]
+        print(f"stored values: {len(arrurls)} distinct, of which {len(arrchrome)} are UI chrome")
+        for u in arrchrome[:8]:
+            print(f"    {u.rsplit('/', 1)[-1][:78]}")
+        if len(arrchrome) > 8:
+            print(f"    ... and {len(arrchrome) - 8} more distinct value(s)")
+
+        if arrchrome and args.apply:
+            lngreset = 0
+            for u in arrchrome:
+                cursor.execute(
+                    f"UPDATE {TABLE} SET {COLUMN} = NULL WHERE {COLUMN} = %s", (u,)
+                )
+                lngreset += cursor.rowcount
+            connection.commit()
+            print(f"  -> reset {lngreset} row(s) to NULL so the backfill below can redo them")
+        elif arrchrome:
+            print("  (dry run: they would be reset to NULL before the backfill)")
+
         cursor.execute(
             f"SELECT COUNT(*) AS N FROM {TABLE} p "
             f"WHERE p.{COLUMN} IS NULL AND EXISTS ("
@@ -144,6 +196,22 @@ def main() -> None:
         connection.commit()
         print(f"  -> backfilled {cursor.rowcount} row(s). Rows whose page has no flagged "
               f"main image stay NULL, which is the honest state.")
+
+        # Verify rather than assume: if chrome came back, the gallery is still dirty and
+        # clear_ui_chrome_images.py has not been re-run since WIKIPEDIA-CRAWLER-021.
+        cursor.execute(
+            f"SELECT DISTINCT {COLUMN} AS U FROM {TABLE} "
+            f"WHERE {COLUMN} IS NOT NULL AND {COLUMN} <> ''"
+        )
+        arrapres = [r["U"] for r in cursor.fetchall() if wimg.is_ui_chrome_url(r["U"])]
+        if arrapres:
+            print(f"\n  !! {len(arrapres)} chrome value(s) came straight back from the gallery.")
+            print( "     The gallery still holds them, so run this first, then this script again:")
+            print( "       python migrations/clear_ui_chrome_images.py --apply")
+            for u in arrapres[:5]:
+                print(f"       {u.rsplit('/', 1)[-1][:74]}")
+        else:
+            print("  verified: no UI chrome in the column after the backfill.")
 
 
 if __name__ == "__main__":
