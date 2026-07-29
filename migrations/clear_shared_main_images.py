@@ -58,6 +58,15 @@ MAIN_IMAGE_TARGETS = [
 ]
 
 
+# The gallery is handled separately: there a row IS the image, so an over-shared image
+# means rows to delete, not a column to blank. Same frequency logic, different verb.
+# It joined the sweep with WIKIPEDIA-CRAWLER-021, once the name-based filter proved
+# unable to tell "Ancient_Greek_Pegasus_icon.png" (portal decoration, 70 entities) from
+# "GPT-5.1_icon.png" (the subject's own icon, 2 entities). Frequency separates them by
+# two orders of magnitude; the "_icon" suffix separates nothing.
+GALLERY = ("T_WC_WIKIPEDIA_PAGE_LANG_IMAGE", "ID_WIKIDATA", "IMAGE_URL")
+
+
 def _scan(cursor, strtable, stridcol, strimagecol, lngmin):
     """Return [(url, distinct_entity_count), ...] above the threshold, most shared first.
 
@@ -124,6 +133,37 @@ def main() -> None:
                     )
                 connection.commit()
                 print(f"    -> cleared {lngrows} value(s)")
+
+        # Gallery: delete the rows outright. A gallery row with no image is meaningless,
+        # and DELETED = 1 is not an option here (citizenphil's upsert never resets that
+        # flag, so a soft-deleted row would stay invisible even after a good re-crawl).
+        strtable, stridcol, strimagecol = GALLERY
+        try:
+            arrshared = _scan(cursor, strtable, stridcol, strimagecol, args.min)
+        except Exception as err:
+            arrshared = []
+            print(f"{strtable}.{strimagecol}: skipped ({err})")
+        if arrshared:
+            lngrows = sum(c for _u, c in arrshared)
+            lngtotal += lngrows
+            print(f"{strtable}.{strimagecol}: {len(arrshared)} image(s) shared by "
+                  f"{args.min}+ entities, {lngrows} entity/image pair(s) concerned")
+            for url, count in arrshared[:args.top]:
+                print(f"    {count:>7}  {url.rsplit('/', 1)[-1]}")
+            if len(arrshared) > args.top:
+                print(f"    {'':>7}  ... and {len(arrshared) - args.top} more")
+            if filedump is not None:
+                for url, count in arrshared:
+                    filedump.write('%s,%s,"%s",%s\n' % (strtable, strimagecol, url, count))
+            if args.apply:
+                lngdeleted = 0
+                for url, _count in arrshared:
+                    cursor.execute(
+                        f"DELETE FROM {strtable} WHERE {strimagecol} = %s", (url,)
+                    )
+                    lngdeleted += cursor.rowcount
+                connection.commit()
+                print(f"    -> deleted {lngdeleted} row(s)")
 
     if filedump is not None:
         filedump.close()

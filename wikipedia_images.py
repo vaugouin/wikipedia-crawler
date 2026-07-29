@@ -212,22 +212,28 @@ _THUMB_PREFIX = re.compile(r"^(lang[a-z-]+-)?\d+px-", re.IGNORECASE)
 #
 #   disambig            Logo_disambig.svg alone accounts for 158212 of those rows: the
 #                       frwiki disambiguation banner, on every disambiguation page.
-#   *_icon.(svg|png)    the portal-icon convention: Drama_film_icon, Gold_medal_icon,
-#                       Canadian_television_stub_icon, ... A file that calls itself an
-#                       icon is declaring what it is. Two of them are real photographs
-#                       (a Big Ben shot, a Dall-e render) that only this suffix betrays,
-#                       the same trap as Apollo_11_Crew.jpg.
+#                       Nothing that is a SUBJECT is ever named "disambig".
 #
-# Deliberately narrow: the extension is required, so "Icon_of_Christ_Pantocrator.jpg"
-# and any other subject whose name merely contains "icon" is left alone.
+# A "*_icon.(svg|png)" suffix rule was tried here and REMOVED, because the production
+# run showed it cannot tell two opposite things apart:
 #
-# The optional second extension is not cosmetic: a thumbnail of an icon is rendered as
-# "500px-Drama_film_icon.svg.png", so an end-anchor on a single extension misses every
-# thumbnail. Third time the same lesson today, after the space-vs-underscore bug and the
-# NNNpx- prefix: the pattern was right, the string it met was not the one assumed.
+#     70  Ancient_Greek_Pegasus_icon.png     portal decoration, must go
+#     70  CC_BY-SA_icon.svg                  licence badge, must go
+#      2  GPT-5.1_icon.png                   the icon IS the subject, must stay
+#      2  Konami_logo_icon.svg               idem
+#      6  Emmy_Icon.png                      idem
+#      1  Changan_icon.svg                   idem
+#
+# App icons, award logos, university crests and transit-line symbols all end in
+# "_icon.svg", and on the entity they belong to they are the correct main image.
+# The name does not separate them; the frequency does, by two orders of magnitude.
+# So portal icons are left to clear_shared_main_images.py, which counts how many
+# distinct entities share an image, and this filter stays out of it.
+#
+# LECON-001 again: when a rule cannot separate two opposite cases, it is the wrong
+# rule, however tempting its shape.
 _UI_CHROME_SUFFIX_PATTERNS = [
     re.compile(r"disambig", re.IGNORECASE),
-    re.compile(r"_icon\.(svg|png)(\.(svg|png))?$", re.IGNORECASE),
 ]
 
 
