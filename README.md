@@ -226,6 +226,16 @@ Wikipedia articles embed template decoration that is not the subject: edit penci
 1. **Page-image enumeration** : chrome `File:` titles are dropped before the `imageinfo` step, so they never reach `T_WC_WIKIPEDIA_PAGE_LANG_IMAGE` (and it saves an API call per 50 files filtered).
 2. **Lead image** : the REST summary endpoint occasionally returns a maintenance banner as `originalimage`. `is_acceptable_main_image_url()` rejects it, and the column is then left untouched.
 
+#### Where the main image is stored
+
+Since WIKIPEDIA-CRAWLER-020 the resolved lead image is written to **`T_WC_WIKIPEDIA_PAGE_LANG.MAIN_IMAGE_URL`**, beside the page it belongs to, in addition to the legacy `T_WC_WIKIDATA_*_V1` column kept for the transition.
+
+This closes the one gap that blocked the V1 decommission (WIKIDATA-CRAWLER-015): the V2 model carries no image column at all, and should not, because a Wikipedia lead image is Wikipedia data rather than a Wikidata statement. `T_WC_WIKIPEDIA_PAGE_LANG` already holds the title, URL, HTTP status and crawl dates of that same page.
+
+It also fixes something the V1 column could not express. V1 had **one** image column per entity while the crawler runs **once per language**, so the second language silently overwrote the first: that is how collection 4845 lost its English lead image (the Man-with-No-Name blu-ray cover) to a French decade-portal banner. Keyed on `(ID_WIKIDATA, LANG)`, the new column stores the main image **per language**, so consumers gain a localized main image they never had.
+
+Schema change and optional backfill: [`migrations/add_main_image_url_to_page_lang.py`](migrations/add_main_image_url_to_page_lang.py). The backfill only copies images already flagged `IS_MAIN_IMAGE = 1` in the gallery, so it never invents one.
+
 #### No first-page-image fallback (removed)
 
 The crawler used to fall back to "the first image on the article" when a page had no lead image. That fallback is **gone**, and this is deliberate: on a Wikipedia article the top of the page belongs to the templates, not to the subject. It produced the great majority of the 1.25M UI-chrome images cleared by [`migrations/clear_ui_chrome_images.py`](migrations/clear_ui_chrome_images.py), `Blue_pencil.svg` alone accounting for 33 734 of the 38 136 wrong movie posters.

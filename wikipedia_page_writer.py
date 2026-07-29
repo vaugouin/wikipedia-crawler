@@ -300,6 +300,24 @@ def f_writelangtodb(payload, lngid, wikidata_id, strlanguage, strcontent, intind
     arrcouples["HTTP_STATUS"] = payload["http_status"]
     if payload["success"]:
         arrcouples["LAST_SUCCESS_AT"] = datetime.now(cp.paris_tz).strftime("%Y-%m-%d %H:%M:%S")
+    # WIKIPEDIA-CRAWLER-020: the page's lead image now also lands HERE, next to the
+    # page it belongs to, and not only in the entity's `T_WC_WIKIDATA_*_V1` column.
+    #
+    # It closes the one gap that blocked the V1 decommission (WIKIDATA-CRAWLER-015):
+    # V2 carries no image column at all and should not, because a Wikipedia lead image
+    # is Wikipedia data, not a Wikidata statement. This table is its natural home, it
+    # already holds the title, the URL, the HTTP status and the crawl dates of that
+    # very page.
+    #
+    # Bonus the V1 column could never offer: this row is keyed on (ID_WIKIDATA, LANG),
+    # so the main image is stored PER LANGUAGE. V1 had a single column shared across
+    # languages, which is precisely how the French pass overwrote the English lead
+    # image of collection 4845 with a portal banner.
+    #
+    # Only written when a lead image was actually resolved: never a guess, never a
+    # blanking of what a previous successful crawl had found (same rule as correctif B).
+    if strmainimageurl:
+        arrcouples["MAIN_IMAGE_URL"] = strmainimageurl
     strsqltablename = "T_WC_WIKIPEDIA_PAGE_LANG"
     strsqlupdatecondition = f"ID_WIKIDATA = '{wikidata_id}' AND LANG = '{strlanguage}'"
     cp.f_sqlupdatearray(strsqltablename, arrcouples, strsqlupdatecondition, 1)
