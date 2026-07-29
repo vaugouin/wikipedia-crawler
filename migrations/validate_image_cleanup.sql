@@ -13,6 +13,8 @@
 --   15 est un controle INVERSE : les visuels de series sous le seuil de 50 (Gumball,
 --      SpongeBob, Alice Comedies) doivent etre PRESERVES. Un 0 y serait une mauvaise
 --      nouvelle : il voudrait dire que le seuil a detruit des images legitimes.
+--   14b est informatif : Apollo 11 n'etait qu'a 16 exemplaires sur PERSON, donc SOUS
+--      le seuil de 50, et devait y survivre. Un nombre inferieur a 50 est conforme.
 --   30 et 31 disent ce qui RESTE a faire en aval : le preprocess n'a pas encore
 --      propage le nettoyage vers les copies T2S servies au front et au voice-agent.
 --
@@ -115,19 +117,31 @@ UNION ALL SELECT '13',
               GROUP BY WIKIPEDIA_PROFILE_PATH HAVING COUNT(DISTINCT ID_WIKIDATA) >= 50) x) = 0
             THEN 'OK' ELSE '>>> MIGRATION 2 A RELANCER' END
 
-UNION ALL SELECT '14',
-       'Migration 2 : temoin Apollo 11 dans les colonnes image principale',
+-- Apollo 11 etait AU-DESSUS du seuil de 50 sur ITEM (464), MOVIE (4552) et SERIE (71) :
+-- la passe par frequence devait donc les effacer. Sur PERSON il n'etait qu'a 16, donc
+-- SOUS le seuil, et il devait y survivre. Les deux cas sont separes ci-dessous, faute de
+-- quoi le controle affiche un rouge pour un comportement conforme au seuil demande.
+UNION ALL SELECT '14a',
+       'Migration 2 : temoin Apollo 11 la ou il depassait le seuil (ITEM + MOVIE + SERIE)',
        '0',
-       CAST(( (SELECT COUNT(*) FROM T_WC_WIKIDATA_ITEM_V1   WHERE WIKIPEDIA_IMAGE_PATH   LIKE '%Apollo\_11\_Crew.jpg')
-            + (SELECT COUNT(*) FROM T_WC_WIKIDATA_MOVIE_V1  WHERE WIKIPEDIA_POSTER_PATH  LIKE '%Apollo\_11\_Crew.jpg')
-            + (SELECT COUNT(*) FROM T_WC_WIKIDATA_SERIE_V1  WHERE WIKIPEDIA_POSTER_PATH  LIKE '%Apollo\_11\_Crew.jpg')
-            + (SELECT COUNT(*) FROM T_WC_WIKIDATA_PERSON_V1 WHERE WIKIPEDIA_PROFILE_PATH LIKE '%Apollo\_11\_Crew.jpg')
+       CAST(( (SELECT COUNT(*) FROM T_WC_WIKIDATA_ITEM_V1   WHERE WIKIPEDIA_IMAGE_PATH   LIKE '%Apollo\_11\_Crew%')
+            + (SELECT COUNT(*) FROM T_WC_WIKIDATA_MOVIE_V1  WHERE WIKIPEDIA_POSTER_PATH  LIKE '%Apollo\_11\_Crew%')
+            + (SELECT COUNT(*) FROM T_WC_WIKIDATA_SERIE_V1  WHERE WIKIPEDIA_POSTER_PATH  LIKE '%Apollo\_11\_Crew%')
             ) AS CHAR),
-       CASE WHEN ( (SELECT COUNT(*) FROM T_WC_WIKIDATA_ITEM_V1   WHERE WIKIPEDIA_IMAGE_PATH   LIKE '%Apollo\_11\_Crew.jpg')
-                 + (SELECT COUNT(*) FROM T_WC_WIKIDATA_MOVIE_V1  WHERE WIKIPEDIA_POSTER_PATH  LIKE '%Apollo\_11\_Crew.jpg')
-                 + (SELECT COUNT(*) FROM T_WC_WIKIDATA_SERIE_V1  WHERE WIKIPEDIA_POSTER_PATH  LIKE '%Apollo\_11\_Crew.jpg')
-                 + (SELECT COUNT(*) FROM T_WC_WIKIDATA_PERSON_V1 WHERE WIKIPEDIA_PROFILE_PATH LIKE '%Apollo\_11\_Crew.jpg')
+       CASE WHEN ( (SELECT COUNT(*) FROM T_WC_WIKIDATA_ITEM_V1   WHERE WIKIPEDIA_IMAGE_PATH   LIKE '%Apollo\_11\_Crew%')
+                 + (SELECT COUNT(*) FROM T_WC_WIKIDATA_MOVIE_V1  WHERE WIKIPEDIA_POSTER_PATH  LIKE '%Apollo\_11\_Crew%')
+                 + (SELECT COUNT(*) FROM T_WC_WIKIDATA_SERIE_V1  WHERE WIKIPEDIA_POSTER_PATH  LIKE '%Apollo\_11\_Crew%')
                  ) = 0 THEN 'OK' ELSE '>>> MIGRATION 2 A RELANCER' END
+
+UNION ALL SELECT '14b',
+       'Migration 2 : Apollo 11 sur PERSON, sous le seuil de 50 donc conserve a dessein',
+       'informatif (16 attendus, non un defaut)',
+       CAST((SELECT COUNT(*) FROM T_WC_WIKIDATA_PERSON_V1
+             WHERE WIKIPEDIA_PROFILE_PATH LIKE '%Apollo\_11\_Crew%') AS CHAR),
+       CASE WHEN (SELECT COUNT(*) FROM T_WC_WIKIDATA_PERSON_V1
+                  WHERE WIKIPEDIA_PROFILE_PATH LIKE '%Apollo\_11\_Crew%') < 50
+            THEN 'informatif (sous le seuil)'
+            ELSE '>>> au-dessus de 50 : la passe aurait du les effacer' END
 
 UNION ALL SELECT '15',
        'Migration 2 : temoin inverse, les visuels de series sous le seuil sont PRESERVES',
