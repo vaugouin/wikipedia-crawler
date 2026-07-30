@@ -58,13 +58,21 @@ MAIN_IMAGE_TARGETS = [
 ]
 
 
-# The gallery is handled separately: there a row IS the image, so an over-shared image
-# means rows to delete, not a column to blank. Same frequency logic, different verb.
-# It joined the sweep with WIKIPEDIA-CRAWLER-021, once the name-based filter proved
-# unable to tell "Ancient_Greek_Pegasus_icon.png" (portal decoration, 70 entities) from
-# "GPT-5.1_icon.png" (the subject's own icon, 2 entities). Frequency separates them by
-# two orders of magnitude; the "_icon" suffix separates nothing.
-GALLERY = ("T_WC_WIKIPEDIA_PAGE_LANG_IMAGE", "ID_WIKIDATA", "IMAGE_URL")
+# NOT a target, and this is a design point rather than an oversight.
+#
+# T_WC_WIKIPEDIA_PAGE_LANG_IMAGE was added here for one commit and removed after the
+# first dry run: at --min 50 it wanted to delete 3729264 of the gallery's 7470521 rows,
+# half the table, including Flag_of_the_United_States.svg (90452), Dorothea Lange's
+# Migrant Mother (5541), a Battle of Britain photograph (3350) and the UN headquarters
+# (6410).
+#
+# Frequency is a sound signal for a MAIN image: claiming one picture represents 4000
+# different subjects is absurd, so it is decoration. The gallery is not a main-image
+# table, it is the list of every image ON a page. A French flag legitimately appears on
+# 62945 pages because it really is on them. There, sharing is the norm, not the anomaly.
+#
+# The gallery is cleaned by name instead, through clear_ui_chrome_images.py.
+GALLERY_NOT_A_TARGET = "T_WC_WIKIPEDIA_PAGE_LANG_IMAGE"
 
 
 def _scan(cursor, strtable, stridcol, strimagecol, lngmin):
@@ -133,37 +141,6 @@ def main() -> None:
                     )
                 connection.commit()
                 print(f"    -> cleared {lngrows} value(s)")
-
-        # Gallery: delete the rows outright. A gallery row with no image is meaningless,
-        # and DELETED = 1 is not an option here (citizenphil's upsert never resets that
-        # flag, so a soft-deleted row would stay invisible even after a good re-crawl).
-        strtable, stridcol, strimagecol = GALLERY
-        try:
-            arrshared = _scan(cursor, strtable, stridcol, strimagecol, args.min)
-        except Exception as err:
-            arrshared = []
-            print(f"{strtable}.{strimagecol}: skipped ({err})")
-        if arrshared:
-            lngrows = sum(c for _u, c in arrshared)
-            lngtotal += lngrows
-            print(f"{strtable}.{strimagecol}: {len(arrshared)} image(s) shared by "
-                  f"{args.min}+ entities, {lngrows} entity/image pair(s) concerned")
-            for url, count in arrshared[:args.top]:
-                print(f"    {count:>7}  {url.rsplit('/', 1)[-1]}")
-            if len(arrshared) > args.top:
-                print(f"    {'':>7}  ... and {len(arrshared) - args.top} more")
-            if filedump is not None:
-                for url, count in arrshared:
-                    filedump.write('%s,%s,"%s",%s\n' % (strtable, strimagecol, url, count))
-            if args.apply:
-                lngdeleted = 0
-                for url, _count in arrshared:
-                    cursor.execute(
-                        f"DELETE FROM {strtable} WHERE {strimagecol} = %s", (url,)
-                    )
-                    lngdeleted += cursor.rowcount
-                connection.commit()
-                print(f"    -> deleted {lngdeleted} row(s)")
 
     if filedump is not None:
         filedump.close()
