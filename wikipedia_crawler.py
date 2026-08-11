@@ -67,30 +67,49 @@ intquickmode = True
 intquickmode = False
 #arrquickprocessids = {205, 218, 223}
 #arrquickprocessids = {220, 222}
-# Ordered from least-recently-updated to most-recently-updated ITEM_TYPE in
-# T_WC_WIKIPEDIA_PAGE_LANG_SECTION (MAX(TIM_UPDATED) ASC), so quick-mode
-# refreshes the stalest content first.
+# Ordered by how much work the family HAS, then by staleness (MAX(TIM_UPDATED) ASC in
+# T_WC_WIKIPEDIA_PAGE_LANG_SECTION), so quick mode refreshes the stalest content that
+# actually produces something.
+#
+# The first criterion was missing until 2026-08-11 and it inverted the list. Ordering on
+# MAX(TIM_UPDATED) alone put the ITEM_TYPEs ABSENT from that table at the head, read as
+# "never crawled, most urgent". But absence has two causes and only one means stale: the
+# family may select NO ROWS AT ALL, because 203 item crawls the whole of
+# T_WC_WIKIDATA_ITEM_V1 and runs before every T_WC_T2S_* family, so an award that is also
+# a Wikidata item is crawled AS AN ITEM and its own family sees nothing. Measured on the
+# 31000 Qids of T_WC_T2S_AWARD: 16258 pages stored under ITEM_TYPE 'item', 7010 'movie',
+# 6881 'person', 925 'serie', 2 'list', and ZERO 'award'.
+#
+# So the five families promoted to the head as "most urgent" were the five with nothing
+# to do, and every sweep opened with five no-ops. They are kept, because they cost about
+# a second each and are the tripwire for the day an entity belongs to no earlier family,
+# but they run last now.
+#
+# Row counts measured 2026-08-11 via `wikipedia_functions.py --content-all <family>`,
+# which prints "N row(s) to process" before doing any work.
 arrquickprocessids = [
-    212,  # collection      (never updated)
-    213,  # group           (never updated)
-    214,  # death           (never updated)
-    219,  # tmdbcollection  (never updated)
-    221,  # keyword         (never updated)
-    209,  # other       (2026-04-14)
+    # -- families with real work, stalest first --------------------------------
+    209,  # other       (2026-04-14; one hard-coded Qid)
     203,  # item        (2026-05-08)
     204,  # serie       (2026-05-09)
-    210,  # list        (2026-05-09)
-    211,  # movement    (2026-05-09)
-    215,  # award       (2026-05-09)
-    216,  # nomination  (2026-05-09)
-    217,  # topic       (2026-05-09)
     201,  # movie       (2026-05-18)
-    205,  # character   (2026-05-20)
-    218,  # character   (2026-05-20)
-    223,  # technical   (2026-05-20)
+    205,  # character   (2026-05-20; Wikidata-sourced)
+    218,  # character   (2026-05-20; TMDB-sourced)
+    223,  # technical   (2026-05-20; 28 rows)
     202,  # person      (2026-05-23)
     220,  # episode     (2026-05-24)
     222,  # season      (2026-05-24)
+    # -- absorbed by the exclusion chain, or expected to be: run last ----------
+    211,  # movement        (not measured, same shape as those below)
+    216,  # nomination      (not measured, same shape)
+    217,  # topic           (not measured, same shape)
+    219,  # tmdbcollection  (not measured)
+    221,  # keyword         (not measured)
+    210,  # list            (1 row, and it has no Wikipedia page)
+    212,  # collection      (0 rows)
+    213,  # group           (0 rows)
+    214,  # death           (0 rows)
+    215,  # award           (0 rows)
 ]
 
 

@@ -118,7 +118,7 @@ These builders used to live in `wikipedia_crawler.py`. They live here so the on-
 On-demand entry points, analogous to the `tmdb_functions` one-shot helpers:
 
 - `f_wikipediaqidtosqleverything(strwikidataid, strcontent="item", arrlanguages=("en", "fr"))` — fully refreshes the Wikipedia data for one Wikidata entity.
-- `f_wikipediacontenttosqleverything(strcontent, arrlanguages=("en", "fr"), strresumeid="", lnglimit=0)` — refreshes **every** entity of one family, with the same concurrent fetch fan-out as the crawler.
+- `f_wikipediacontenttosqleverything(strcontent, arrlanguages=("en", "fr"), strresumeid="", lnglimit=0, blnnoexclusions=False)` — refreshes **every** entity of one family, with the same concurrent fetch fan-out as the crawler. `blnnoexclusions=True` crawls the family's whole source table, which is the only way to refresh a family the exclusion chain has absorbed.
 
 Both are parallel-safe with a running crawler. See [Refreshing content on demand in a parallel container](#refreshing-content-on-demand-in-a-parallel-container).
 
@@ -427,32 +427,52 @@ Quick mode is a parallel-execution hatch that lets a secondary `wikipedia-crawle
 - `intquickmode` — when `True`, restricts the run to the IDs listed in `arrquickprocessids` and **skips writes to shared resume-state server variables** so the two containers do not corrupt each other's checkpoints.
 - `arrquickprocessids` — an **ordered list** of process IDs. Quick mode iterates this list in order via an `id → processconfig` lookup, so the list order — not the `arrprocesses` definition order — determines execution order.
 
-The list is ordered from least-recently to most-recently updated `ITEM_TYPE` in `T_WC_WIKIPEDIA_PAGE_LANG_SECTION` (queried with `SELECT MAX(TIM_UPDATED), ITEM_TYPE ... GROUP BY ITEM_TYPE ORDER BY MAX_TIM_UPDATED ASC`). This refreshes the stalest content first. `ITEM_TYPE`s with no rows in `T_WC_WIKIPEDIA_PAGE_LANG_SECTION` (never crawled) are placed at the head of the list.
+The list is ordered by **how much work the family actually has**, then by staleness — the stalest *productive* content first.
 
-Current order:
+That first criterion was missing until 2026-08-11, and it inverted the list. The order was read off `SELECT MAX(TIM_UPDATED), ITEM_TYPE FROM T_WC_WIKIPEDIA_PAGE_LANG_SECTION GROUP BY ITEM_TYPE`, stalest first, with the `ITEM_TYPE`s absent from that table put at the head as "never crawled, most urgent". But absence from that table has **two** causes, and only one of them means stale:
 
-| Position | ID  | Content          | MAX(TIM_UPDATED) |
-|----------|-----|------------------|------------------|
-| 1        | 212 | `collection`     | never updated    |
-| 2        | 213 | `group`          | never updated    |
-| 3        | 214 | `death`          | never updated    |
-| 4        | 219 | `tmdbcollection` | never updated    |
-| 5        | 221 | `keyword`        | never updated    |
-| 6        | 209 | `other`          | 2026-04-14       |
-| 7        | 203 | `item`           | 2026-05-08       |
-| 8        | 204 | `serie`          | 2026-05-09       |
-| 9        | 210 | `list`           | 2026-05-09       |
-| 10       | 211 | `movement`       | 2026-05-09       |
-| 11       | 215 | `award`          | 2026-05-09       |
-| 12       | 216 | `nomination`     | 2026-05-09       |
-| 13       | 217 | `topic`          | 2026-05-09       |
-| 14       | 201 | `movie`          | 2026-05-18       |
-| 15       | 205 | `character` (Wikidata) | 2026-05-20 |
-| 16       | 218 | `character` (TMDB)     | 2026-05-20 |
-| 17       | 223 | `technical`      | 2026-05-20       |
-| 18       | 202 | `person`         | 2026-05-23       |
-| 19       | 220 | `episode`        | 2026-05-24       |
-| 20       | 222 | `season`         | 2026-05-24       |
+- the family has never been crawled — genuinely urgent;
+- the family **selects no rows at all**, because the exclusion chain empties it. It writes nothing, so it appears nowhere, forever.
+
+The second case is the common one. Process `203 item` crawls the whole of `T_WC_WIKIDATA_ITEM_V1` and runs before every `T_WC_T2S_*` family, so any award, group, death or collection that is also a Wikidata item is crawled **as an `item`** and its own family sees an empty result set. Measured on the 31 000 Qids of `T_WC_T2S_AWARD`: 16 258 of their Wikipedia pages are stored under `ITEM_TYPE = 'item'`, 7 010 under `movie`, 6 881 under `person`, 925 under `serie`, 2 under `list` — and **zero** under `award`. Running `215 award` today selects 0 rows.
+
+So the five families the list promoted to the head as "most urgent" were in fact the five with nothing to do, and the sweep opened with five no-ops. They stay in the list — they cost about a second each, and they are the tripwire for the day an entity appears that no earlier family owns — but they now run last.
+
+Row counts below were measured on 2026-08-11 with `--content-all <family>`, which prints `N row(s) to process` before doing any work; that makes an empty family free to verify. The `MAX(TIM_UPDATED)` column is the previous measurement, kept because it still orders the productive families correctly.
+
+Current order — productive families first, stalest first:
+
+| Position | ID  | Content          | Rows selected | MAX(TIM_UPDATED) |
+|----------|-----|------------------|---------------|------------------|
+| 1        | 209 | `other`          | ≤ 1 (one hard-coded Qid) | 2026-04-14 |
+| 2        | 203 | `item`           | not measured (large) | 2026-05-08 |
+| 3        | 204 | `serie`          | not measured (large) | 2026-05-09 |
+| 4        | 201 | `movie`          | not measured (large) | 2026-05-18 |
+| 5        | 205 | `character` (Wikidata) | not measured   | 2026-05-20 |
+| 6        | 218 | `character` (TMDB)     | not measured   | 2026-05-20 |
+| 7        | 223 | `technical`      | **28**        | 2026-05-20       |
+| 8        | 202 | `person`         | not measured (large) | 2026-05-23 |
+| 9        | 220 | `episode`        | not measured (large) | 2026-05-24 |
+| 10       | 222 | `season`         | not measured (large) | 2026-05-24 |
+
+Then the families the exclusion chain has absorbed, or is expected to absorb:
+
+| Position | ID  | Content          | Rows selected | Note |
+|----------|-----|------------------|---------------|------|
+| 11       | 211 | `movement`       | not measured  | same shape as the absorbed families below |
+| 12       | 216 | `nomination`     | not measured  | same shape |
+| 13       | 217 | `topic`          | not measured  | same shape |
+| 14       | 219 | `tmdbcollection` | not measured  | listed as "never updated" before |
+| 15       | 221 | `keyword`        | not measured  | listed as "never updated" before |
+| 16       | 210 | `list`           | **1** (no Wikipedia page) | effectively absorbed |
+| 17       | 212 | `collection`     | **0**         | fully absorbed |
+| 18       | 213 | `group`          | **0**         | fully absorbed |
+| 19       | 214 | `death`          | **0**         | fully absorbed |
+| 20       | 215 | `award`          | **0**         | fully absorbed |
+
+Two consequences of absorption are worth knowing before reading these tables as "content is missing". The content is **not** missing: it is stored under the `ITEM_TYPE` of the family that actually crawled it, so a consumer filtering on `ITEM_TYPE = 'award'` finds nothing while the pages sit there under `item`. And the family's own main-image column is only ever written for the rows it selects, so `T_WC_T2S_TECHNICAL.WIKIPEDIA_IMAGE_PATH` was filled for those 28 technical entities and stays empty for any technical entity that is also an item — that one's image went to `T_WC_WIKIDATA_ITEM_V1.WIKIPEDIA_IMAGE_PATH`.
+
+To refresh an absorbed family on demand anyway, bypass the chain with [`--no-exclusions`](#refreshing-an-absorbed-family---no-exclusions).
 
 When `intquickmode = False`, the regular `arrprocessscope = arrprocesses[resume_index:]` path applies and the [Resume mechanism](#resume-mechanism) above governs ordering and checkpointing.
 
@@ -480,11 +500,30 @@ wf.f_wikipediacontenttosqleverything("technical")                      # every t
 wf.f_wikipediacontenttosqleverything("list", lnglimit=20)              # trial run, first 20
 wf.f_wikipediacontenttosqleverything("list", strresumeid="Q123456")    # continue after a stop
 wf.f_wikipediacontenttosqleverything("list", arrlanguages=("fr",))     # French only
+wf.f_wikipediacontenttosqleverything("award", blnnoexclusions=True)    # absorbed family, see below
 ```
 
-`f_wikipediacontenttosqleverything(strcontent, arrlanguages=("en", "fr"), strresumeid="", lnglimit=0)` selects the family's rows with the family's **own** query from [wikipedia_queries.py](wikipedia_queries.py) — the same source table and the same exclusion chain the full crawler uses, so an entity already owned by an earlier family is not crawled twice — then runs the same pipeline as the crawler: titles resolved 50 Qids per `wbgetentities` call, `(entity, language)` pages fetched concurrently by a thread pool sized by `WIKIPEDIA_CRAWLER_WORKERS`, all database writes performed on the calling thread.
+`f_wikipediacontenttosqleverything(strcontent, arrlanguages=("en", "fr"), strresumeid="", lnglimit=0, blnnoexclusions=False)` selects the family's rows with the family's **own** query from [wikipedia_queries.py](wikipedia_queries.py) — the same source table and the same exclusion chain the full crawler uses, so an entity already owned by an earlier family is not crawled twice — then runs the same pipeline as the crawler: titles resolved 50 Qids per `wbgetentities` call, `(entity, language)` pages fetched concurrently by a thread pool sized by `WIKIPEDIA_CRAWLER_WORKERS`, all database writes performed on the calling thread.
 
 Because it writes no checkpoint (see below), **resuming is manual**: the last processed id is printed when the run ends or is interrupted, and passed back through `strresumeid` / `--resume-from`. The bound is inclusive, so the last entity is refreshed again — harmless, every write is an idempotent keyed upsert.
+
+### Refreshing an absorbed family (`--no-exclusions`)
+
+Most `T_WC_T2S_*` families select **0 rows** in a normal run, and that is not a bug: process `203 item` crawls the whole of `T_WC_WIKIDATA_ITEM_V1` and runs first, so an award that is also a Wikidata item is crawled *as an item* and `215 award` legitimately has nothing left to do (see [Quick mode](#quick-mode) for the measurements). The exclusion chain answers "which family **owns** this entity in a full crawl" — the right question for a full crawl, the wrong one for "refresh the awards now".
+
+`blnnoexclusions=True` / `--no-exclusions` drops the chain and crawls the family's whole source table:
+
+```bash
+./wikipedia-crawler-manual.sh --content-all award --no-exclusions
+./wikipedia-crawler-manual.sh --content-all death --no-exclusions --limit 50
+```
+
+The query is built from `CONTENT_CONFIG`'s `sourcetable` / `idcolumn`, with the `^Q[0-9]+$` guard applied to every family (including those whose own builder omits it), so a malformed id never reaches the Wikidata API. `--resume-from` and `--limit` work as usual. `other` has no source table — a single hard-coded Qid — so the flag prints a notice and changes nothing there.
+
+Two effects to be aware of, neither harmful:
+
+- The rows are written with **this family's `ITEM_TYPE`** (`award` rather than `item`), because `ITEM_TYPE` records the process that did the crawl. `T_WC_WIKIPEDIA_PAGE_LANG` is keyed on `(ID_WIKIDATA, LANG)` with no `ITEM_TYPE` in the key, so the column is last-writer-wins by design and the next full crawl of `203 item` sets it back. No consumer filters on it: `fastapi-text2sql` and `tmdb-front` both select on `(ID_WIKIDATA, LANG)` alone.
+- The main image goes to the destination configured for **this** family. For the `T_WC_T2S_*` families that destination is `T_WC_WIKIDATA_ITEM_V1.WIKIPEDIA_IMAGE_PATH`, which is where a full crawl would have put it anyway.
 
 ### Why both are parallel-safe
 

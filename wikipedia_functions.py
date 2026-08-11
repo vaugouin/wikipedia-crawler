@@ -157,8 +157,44 @@ def f_wikipediaqidtosqleverything(strwikidataid, strcontent="item", arrlanguages
     }
 
 
+def _buildsourcesql(strcontent, strresumeid):
+    """Return the family's rows WITHOUT the exclusion chain: the whole source table.
+
+    The exclusion chain answers "which family OWNS this entity in a full crawl", and it
+    empties most ``T_WC_T2S_*`` families: process 203 ``item`` crawls the whole of
+    ``T_WC_WIKIDATA_ITEM_V1`` and runs first, so an award that is also a Wikidata item is
+    crawled as an ``item`` and ``215 award`` selects nothing. That is right for a full
+    crawl and wrong for "refresh the awards now", which is what this query serves.
+
+    Built from ``CONTENT_CONFIG``'s ``sourcetable`` / ``idcolumn``. The ``^Q[0-9]+$``
+    guard is applied to every family, including the ones whose own builder omits it, so a
+    malformed id never reaches the Wikidata API. Returns ``None`` for a family with no
+    source table (``other``, a single hard-coded Qid), leaving the caller to fall back to
+    the family's own builder.
+    """
+    config = CONTENT_CONFIG[strcontent]
+    strsourcetable = config.get("sourcetable")
+    stridcolumn = config.get("idcolumn")
+    if not strsourcetable or not stridcolumn:
+        return None
+    strsql = (
+        f"SELECT DISTINCT {stridcolumn} AS id, ID_WIKIDATA FROM {strsourcetable} "
+        "WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> '' "
+        "AND ID_WIKIDATA REGEXP '^Q[0-9]+$' "
+    )
+    if strresumeid != "":
+        # Same quoting rule as the builders in wikipedia_queries: the Qid-keyed families
+        # compare strings, the TMDB-keyed ones compare integers.
+        if stridcolumn == "ID_WIKIDATA":
+            strsql += f"AND {stridcolumn} >= '{strresumeid}' "
+        else:
+            strsql += f"AND {stridcolumn} >= {strresumeid} "
+    strsql += f"ORDER BY {stridcolumn} ASC "
+    return strsql
+
+
 def f_wikipediacontenttosqleverything(strcontent, arrlanguages=("en", "fr"),
-                                      strresumeid="", lnglimit=0):
+                                      strresumeid="", lnglimit=0, blnnoexclusions=False):
     """Refresh EVERY entity of one content family, on demand.
 
     Runs the family's own row-selection query from ``wikipedia_queries`` — same source
@@ -167,6 +203,14 @@ def f_wikipediacontenttosqleverything(strcontent, arrlanguages=("en", "fr"),
     titles resolved 50 Qids per ``wbgetentities`` call, ``(entity, language)`` pages
     fetched concurrently by a thread pool, every database write performed here on the
     calling thread (PyMySQL's shared connection is not thread-safe).
+
+    With ``blnnoexclusions=True`` the exclusion chain is dropped and the whole source
+    table is crawled instead. This is how the absorbed families are refreshed on demand:
+    ``215 award`` selects 0 rows in a full crawl because process 203 ``item`` already owns
+    those entities, so asking for "the awards" only ever works by ignoring ownership. The
+    rows are then written with this family's ``ITEM_TYPE`` (``award`` rather than
+    ``item``); no consumer filters on that column, and the next full crawl of 203 sets it
+    back.
 
     Like the single-Qid path, it writes **no** resume-state or monitoring server
     variables, so it is safe to run in a second container while the main crawler keeps
@@ -181,6 +225,9 @@ def f_wikipediacontenttosqleverything(strcontent, arrlanguages=("en", "fr"),
             ``ID_WIKIDATA``, ...), inclusive. Empty means start at the first row.
         lnglimit: Optional cap on the number of entities processed (0 = no cap), handy
             for a trial run before committing to the whole family.
+        blnnoexclusions: When True, crawl the family's whole source table instead of the
+            rows it owns. Required to refresh a family the exclusion chain has absorbed
+            (``award``, ``death``, ``group``, ``collection``, ...).
 
     Returns:
         A summary dict: ``{"content", "selected", "processed", "en", "fr", "lastid",
@@ -199,8 +246,20 @@ def f_wikipediacontenttosqleverything(strcontent, arrlanguages=("en", "fr"),
     strimagecolumn = config["imagecolumn"]
     needs_image = (strimagetable != "" and strimagecolumn != "")
 
-    strsql = CONTENT_SQL_BUILDERS[strcontent](strresumeid)
+    strsql = ""
+    strmode = "rows owned by this family (exclusion chain applied)"
+    if blnnoexclusions:
+        strsql = _buildsourcesql(strcontent, strresumeid)
+        strmode = f"WHOLE source table {CONTENT_CONFIG[strcontent].get('sourcetable')}, ownership ignored"
+        if strsql is None:
+            # `other` is a single hard-coded Qid with no source table: nothing to widen.
+            print(f"No source table for '{strcontent}'; --no-exclusions has no effect here.")
+            strsql = ""
+            strmode = "rows owned by this family (exclusion chain applied)"
+    if strsql == "":
+        strsql = CONTENT_SQL_BUILDERS[strcontent](strresumeid)
     print(f"Refreshing the whole Wikipedia {strcontent} family (process {intindex})")
+    print(f"Selection: {strmode}")
     print(strsql)
 
     conn = cp.f_getconnection()
@@ -292,7 +351,8 @@ def f_wikipediacontenttosqleverything(strcontent, arrlanguages=("en", "fr"),
           f"{lngencount} en + {lngfrcount} fr pages written in {lngruntime} seconds "
           f"({cp.convert_seconds_to_duration(lngruntime)}) [{strstopped}]")
     if strstopped != "complete" and strlastid != "":
-        print(f"Resume with: --content-all {strcontent} --resume-from {strlastid}")
+        strflag = " --no-exclusions" if blnnoexclusions else ""
+        print(f"Resume with: --content-all {strcontent}{strflag} --resume-from {strlastid}")
     return {
         "content": strcontent,
         "selected": lngtotal,
@@ -313,7 +373,8 @@ def main():
                "  python wikipedia_functions.py Q25188 --item-type movie\n"
                "  python wikipedia_functions.py --content-all technical\n"
                "  python wikipedia_functions.py --content-all list --limit 20\n"
-               "  python wikipedia_functions.py --content-all list --resume-from Q123456",
+               "  python wikipedia_functions.py --content-all list --resume-from Q123456\n"
+               "  python wikipedia_functions.py --content-all award --no-exclusions",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     ap.add_argument("wikidata_id", nargs="?", help="Wikidata Q-id, e.g. Q24815")
@@ -341,14 +402,23 @@ def main():
         "--limit", dest="limit", type=int, default=0,
         help="--content-all only: process at most N entities (0 = no limit)",
     )
+    ap.add_argument(
+        "--no-exclusions", dest="noexclusions", action="store_true",
+        help="--content-all only: crawl the family's WHOLE source table instead of the "
+             "rows it owns. Needed for the families the exclusion chain absorbs (award, "
+             "death, group, collection, ...), which otherwise select 0 rows",
+    )
     args = ap.parse_args()
     if bool(args.wikidata_id) == bool(args.contentall):
         ap.error("give either a Wikidata Q-id or --content-all <family>, not both/neither")
+    if args.noexclusions and not args.contentall:
+        ap.error("--no-exclusions only applies to --content-all")
     arrlanguages = tuple(args.lang) if args.lang else ("en", "fr")
     if args.contentall:
         f_wikipediacontenttosqleverything(
             args.contentall, arrlanguages=arrlanguages,
             strresumeid=args.resumeid, lnglimit=args.limit,
+            blnnoexclusions=args.noexclusions,
         )
     else:
         f_wikipediaqidtosqleverything(args.wikidata_id, strcontent=args.content, arrlanguages=arrlanguages)
