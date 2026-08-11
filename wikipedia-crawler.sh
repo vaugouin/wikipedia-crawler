@@ -1,7 +1,10 @@
 #!/bin/bash
 
-# Check if the wikipedia-crawler Docker container is running
-if [ $(docker ps -q -f name=wikipedia-crawler) ]; then
+# Check if the wikipedia-crawler Docker container is running.
+# The name filter is a regex, and an unanchored one also matches the on-demand
+# `wikipedia-crawler-manual` container: without ^...$ this script would report
+# "already running" (and skip the restart) whenever a manual run happens to be open.
+if [ $(docker ps -q -f name=^wikipedia-crawler$) ]; then
     echo "wikipedia-crawler Docker container is already running."
 else
     # Start the wikipedia-crawler container if it is not running

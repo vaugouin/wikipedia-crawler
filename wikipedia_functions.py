@@ -1,10 +1,18 @@
-"""Single-Qid Wikipedia refresh entry point.
+"""On-demand Wikipedia refresh entry points (one Qid, or one whole family).
 
 Companion to the full-run orchestrator ([wikipedia_crawler.py](wikipedia_crawler.py)).
 Where that script sweeps every entity family in order and checkpoints its progress
-in server variables, this module exposes ONE function that refreshes exactly one
-Wikidata entity — the Wikipedia equivalent of the ``tmdb_functions`` one-shot
-helpers (e.g. ``tf.f_tmdbmovietosqleverything(13860)``).
+in server variables, this module refreshes exactly what you ask for and checkpoints
+nothing — the Wikipedia equivalent of the ``tmdb_functions`` one-shot helpers
+(e.g. ``tf.f_tmdbmovietosqleverything(13860)``).
+
+Two entry points:
+
+- ``f_wikipediaqidtosqleverything`` — one Wikidata entity.
+- ``f_wikipediacontenttosqleverything`` — every entity of one family (``list``,
+  ``technical``, ...), using the family's own row-selection query from
+  [wikipedia_queries.py](wikipedia_queries.py), exclusion chain included, with the
+  same concurrent fetch fan-out as the crawler.
 
 It is designed to run in a **second, throwaway container** alongside the always-on
 ``wikipedia-crawler`` container:
@@ -19,6 +27,7 @@ It is designed to run in a **second, throwaway container** alongside the always-
     >>> wf.f_wikipediaqidtosqleverything("Q24815")                     # item (default)
     >>> wf.f_wikipediaqidtosqleverything("Q25188", strcontent="movie")  # a movie
     >>> wf.f_wikipediaqidtosqleverything("Q42", strcontent="person")    # a person
+    >>> wf.f_wikipediacontenttosqleverything("technical")               # a whole family
 
 Parallel-safe by construction: it reuses the exact same per-entity fetch/persist
 code as the main crawler (``wikipedia_page_writer``) but writes **no** resume-state
@@ -29,15 +38,18 @@ currently touching is idempotent.
 """
 
 import argparse
+import time
+from concurrent.futures import ThreadPoolExecutor
 
 import citizenphil as cp
-from wikipedia_crawler_helpers import get_linked_pages_batch
-from wikipedia_http import get_session
+from wikipedia_crawler_helpers import WikidataTransientError, get_linked_pages_batch
+from wikipedia_http import get_session, get_worker_count
 from wikipedia_page_writer import (
     CONTENT_CONFIG,
     f_fetchlangpayload,
     f_writelangtodb,
 )
+from wikipedia_queries import CONTENT_SQL_BUILDERS
 
 STRPROPS = "sitelinks"
 
@@ -145,24 +157,201 @@ def f_wikipediaqidtosqleverything(strwikidataid, strcontent="item", arrlanguages
     }
 
 
+def f_wikipediacontenttosqleverything(strcontent, arrlanguages=("en", "fr"),
+                                      strresumeid="", lnglimit=0):
+    """Refresh EVERY entity of one content family, on demand.
+
+    Runs the family's own row-selection query from ``wikipedia_queries`` — same source
+    table, same exclusion chain that keeps an entity owned by an earlier family from
+    being crawled twice — and then the same per-entity pipeline as the main crawler:
+    titles resolved 50 Qids per ``wbgetentities`` call, ``(entity, language)`` pages
+    fetched concurrently by a thread pool, every database write performed here on the
+    calling thread (PyMySQL's shared connection is not thread-safe).
+
+    Like the single-Qid path, it writes **no** resume-state or monitoring server
+    variables, so it is safe to run in a second container while the main crawler keeps
+    going. The trade-off of writing no checkpoint is that resuming is manual: the last
+    processed id is printed on exit (and on Ctrl-C), to be passed back as
+    ``strresumeid``.
+
+    Args:
+        strcontent: Entity family, one of the keys of ``CONTENT_SQL_BUILDERS``.
+        arrlanguages: Wikipedia languages to refresh (default English + French).
+        strresumeid: Optional lower bound on the family's own id column (``ID_MOVIE``,
+            ``ID_WIKIDATA``, ...), inclusive. Empty means start at the first row.
+        lnglimit: Optional cap on the number of entities processed (0 = no cap), handy
+            for a trial run before committing to the whole family.
+
+    Returns:
+        A summary dict: ``{"content", "selected", "processed", "en", "fr", "lastid",
+        "stopped"}`` where ``en``/``fr`` count the pages actually persisted and
+        ``stopped`` reports why the run ended (``"complete"``, ``"limit"``,
+        ``"interrupted"``, ``"wikidata-outage"``).
+    """
+    if strcontent not in CONTENT_SQL_BUILDERS:
+        raise ValueError(
+            f"Unknown content family '{strcontent}'. "
+            f"Expected one of: {', '.join(sorted(CONTENT_SQL_BUILDERS))}"
+        )
+    config = CONTENT_CONFIG[strcontent]
+    intindex = config["id"]
+    strimagetable = config["imagetable"]
+    strimagecolumn = config["imagecolumn"]
+    needs_image = (strimagetable != "" and strimagecolumn != "")
+
+    strsql = CONTENT_SQL_BUILDERS[strcontent](strresumeid)
+    print(f"Refreshing the whole Wikipedia {strcontent} family (process {intindex})")
+    print(strsql)
+
+    conn = cp.f_getconnection()
+    cursor = conn.cursor()
+    cursor2 = conn.cursor()
+    cursor.execute(strsql)
+    arrrows = list(cursor.fetchall())
+    if lnglimit > 0:
+        arrrows = arrrows[:lnglimit]
+    lngtotal = len(arrrows)
+    print(f"{lngtotal} row(s) to process for {strcontent}")
+
+    dblstart = time.time()
+    lngencount = 0
+    lngfrcount = 0
+    lngprocessed = 0
+    strlastid = ""
+    strstopped = "complete"
+    session = get_session()
+    intworkers = get_worker_count()
+    strlanguagesparam = "|".join(arrlanguages)
+    # The executor is managed by hand rather than with a `with` block: on Ctrl-C the
+    # block form would still wait for every queued task (up to 100 page fetches), so
+    # the run would take a long minute to die. `cancel_futures=True` drops what has
+    # not started and waits only for the in-flight fetches.
+    executor = ThreadPoolExecutor(max_workers=intworkers)
+    try:
+        for intchunkstart in range(0, lngtotal, 50):
+            arrchunk = arrrows[intchunkstart:intchunkstart + 50]
+            arrids = [row["ID_WIKIDATA"] for row in arrchunk]
+            batch = get_linked_pages_batch(arrids, STRPROPS, strlanguagesparam)
+            arrentities = batch.get("entities", {}) if isinstance(batch, dict) else {}
+            # Submit one fetch task per (row, language) with a resolvable title.
+            arrrowtasks = []
+            for row in arrchunk:
+                wikidata_id = row["ID_WIKIDATA"]
+                entity = arrentities.get(wikidata_id) or {}
+                sitelinks = entity.get(STRPROPS) or {}
+                arrtasks = []
+                for strlanguage in arrlanguages:
+                    strkey = strlanguage + "wiki"
+                    page_title = (sitelinks.get(strkey) or {}).get("title")
+                    if not page_title:
+                        arrtasks.append((strlanguage, None, None))
+                        continue
+                    future = executor.submit(
+                        f_fetchlangpayload, session, wikidata_id,
+                        page_title, strkey, strlanguage, needs_image,
+                    )
+                    arrtasks.append((strlanguage, page_title, future))
+                arrrowtasks.append((row, arrtasks))
+            # Drain in submission order; every database write stays on this thread.
+            for row, arrtasks in arrrowtasks:
+                lngid = row["id"]
+                wikidata_id = row["ID_WIKIDATA"]
+                lngprocessed += 1
+                print("-" * 80)
+                print(f"[{lngprocessed}/{lngtotal}] {strcontent} id {lngid} "
+                      f"Wikidata id {wikidata_id}")
+                for strlanguage, page_title, future in arrtasks:
+                    if future is None:
+                        print(f"  {strlanguage}: no Wikipedia page")
+                        continue
+                    print(f"  {strlanguage}: {page_title}")
+                    # blnwritecounters=False: never touch the main crawler's counters.
+                    lngencount, lngfrcount = f_writelangtodb(
+                        future.result(), lngid, wikidata_id, strlanguage, strcontent,
+                        intindex, strimagetable, strimagecolumn, cursor2,
+                        lngencount, lngfrcount, blnwritecounters=False,
+                    )
+                strlastid = str(lngid)
+    except KeyboardInterrupt:
+        strstopped = "interrupted"
+        print("\n⏹️  Interrupted.")
+    except WikidataTransientError as err:
+        # Same rule as the crawler (WIKIPEDIA-CRAWLER-017): a persistent Wikidata
+        # maxlag / outage must stop the run, never be swallowed as "no sitelinks",
+        # which would record empty Wikipedia content for real pages.
+        strstopped = "wikidata-outage"
+        print(f"\n⏸️  Wikidata transient outage, stopping: {err}")
+    finally:
+        executor.shutdown(wait=True, cancel_futures=True)
+    if strstopped == "complete" and lnglimit > 0 and lngprocessed >= lnglimit:
+        strstopped = "limit"
+
+    lngruntime = int(time.time() - dblstart)
+    print("=" * 80)
+    print(f"{strcontent}: {lngprocessed}/{lngtotal} entities, "
+          f"{lngencount} en + {lngfrcount} fr pages written in {lngruntime} seconds "
+          f"({cp.convert_seconds_to_duration(lngruntime)}) [{strstopped}]")
+    if strstopped != "complete" and strlastid != "":
+        print(f"Resume with: --content-all {strcontent} --resume-from {strlastid}")
+    return {
+        "content": strcontent,
+        "selected": lngtotal,
+        "processed": lngprocessed,
+        "en": lngencount,
+        "fr": lngfrcount,
+        "lastid": strlastid,
+        "stopped": strstopped,
+    }
+
+
 def main():
     ap = argparse.ArgumentParser(
-        description="Fully refresh the Wikipedia data for a single Wikidata Q-id "
-                    "(parallel-safe with a running wikipedia-crawler container)."
+        description="Fully refresh the Wikipedia data for a single Wikidata Q-id, or "
+                    "for a whole entity family (parallel-safe with a running "
+                    "wikipedia-crawler container).",
+        epilog="Examples:\n"
+               "  python wikipedia_functions.py Q25188 --item-type movie\n"
+               "  python wikipedia_functions.py --content-all technical\n"
+               "  python wikipedia_functions.py --content-all list --limit 20\n"
+               "  python wikipedia_functions.py --content-all list --resume-from Q123456",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    ap.add_argument("wikidata_id", help="Wikidata Q-id, e.g. Q24815")
+    ap.add_argument("wikidata_id", nargs="?", help="Wikidata Q-id, e.g. Q24815")
+    ap.add_argument(
+        "--content-all", dest="contentall", choices=sorted(CONTENT_SQL_BUILDERS),
+        help="Refresh EVERY entity of this family instead of a single Q-id, using the "
+             "family's own row-selection query (exclusion chain included)",
+    )
     ap.add_argument(
         "--item-type", "--content", dest="content", default="item",
         choices=sorted(CONTENT_CONFIG),
-        help="Entity family / ITEM_TYPE (default: item)",
+        help="Entity family / ITEM_TYPE of the single Q-id (default: item). Ignored "
+             "with --content-all",
     )
     ap.add_argument(
         "--lang", action="append", choices=["en", "fr"],
         help="Language to refresh; pass twice for both. Default: en and fr",
     )
+    ap.add_argument(
+        "--resume-from", dest="resumeid", default="",
+        help="--content-all only: start at this id of the family's own id column "
+             "(ID_MOVIE, ID_WIKIDATA, ...), inclusive",
+    )
+    ap.add_argument(
+        "--limit", dest="limit", type=int, default=0,
+        help="--content-all only: process at most N entities (0 = no limit)",
+    )
     args = ap.parse_args()
+    if bool(args.wikidata_id) == bool(args.contentall):
+        ap.error("give either a Wikidata Q-id or --content-all <family>, not both/neither")
     arrlanguages = tuple(args.lang) if args.lang else ("en", "fr")
-    f_wikipediaqidtosqleverything(args.wikidata_id, strcontent=args.content, arrlanguages=arrlanguages)
+    if args.contentall:
+        f_wikipediacontenttosqleverything(
+            args.contentall, arrlanguages=arrlanguages,
+            strresumeid=args.resumeid, lnglimit=args.limit,
+        )
+    else:
+        f_wikipediaqidtosqleverything(args.wikidata_id, strcontent=args.content, arrlanguages=arrlanguages)
 
 
 if __name__ == "__main__":
