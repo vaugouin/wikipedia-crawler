@@ -54,6 +54,14 @@ CREATE TABLE `T_WC_T2S_AWARD` (
 /*!40101 SET character_set_client = @saved_cs_client */;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!40101 SET character_set_client = utf8 */;
+CREATE TABLE `T_WC_T2S_AWARD_CLASS` (
+  `ID_CLASS` varchar(50) NOT NULL,
+  `DAT_CREAT` datetime DEFAULT current_timestamp(),
+  PRIMARY KEY (`ID_CLASS`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8 */;
 CREATE TABLE `T_WC_T2S_CACHE` (
   `ID_ROW` int(11) NOT NULL AUTO_INCREMENT,
   `QUESTION` mediumtext DEFAULT NULL,
@@ -98,20 +106,6 @@ CREATE TABLE `T_WC_T2S_CACHE` (
   KEY `UI_LANGUAGE` (`UI_LANGUAGE`),
   KEY `RESULT_ENTITY` (`RESULT_ENTITY`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-/*!40101 SET character_set_client = @saved_cs_client */;
-/*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!40101 SET character_set_client = utf8 */;
-CREATE TABLE `T_WC_T2S_CACHE_PURGE_20260803` (
-  `ID_ROW` int(11) NOT NULL,
-  `VERDICT` varchar(60) DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
-/*!40101 SET character_set_client = @saved_cs_client */;
-/*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!40101 SET character_set_client = utf8 */;
-CREATE TABLE `T_WC_T2S_CACHE_PURGE_AGG_20260803` (
-  `ID_ROW` int(11) NOT NULL,
-  `VERDICT` varchar(63) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!40101 SET character_set_client = utf8 */;
@@ -626,6 +620,12 @@ CREATE TABLE `T_WC_T2S_EVALUATION_EXECUTION` (
   `EMBEDDINGS_PROCESSING_TIME` double DEFAULT NULL,
   `QUERY_EXECUTION_TIME` double DEFAULT NULL,
   `TOTAL_PROCESSING_TIME` double DEFAULT NULL,
+  `RESULT_ENTITY_PROCESSING_TIME` double DEFAULT NULL,
+  `EMBEDDINGS_CACHE_SEARCH_TIME` double DEFAULT NULL,
+  `ENTITY_RESOLUTION_PLANNING_TIME` double DEFAULT NULL,
+  `ENTITY_RAW_FALLBACK_COUNT` int(5) DEFAULT NULL,
+  `NO_ENTITY_EXTRACTED` int(5) DEFAULT NULL,
+  `COMPLEX_QUESTION_PROCESSING_TIME` double DEFAULT NULL,
   `ASSERTIONS_ENTITY_EXTRACTION_SCORE` double DEFAULT NULL,
   `ASSERTIONS_SQL_QUERY_SCORE` double DEFAULT NULL,
   `ASSERTIONS_RESULT_SCORE` double DEFAULT NULL,
@@ -664,7 +664,13 @@ CREATE TABLE `T_WC_T2S_EVALUATION_EXECUTION` (
   KEY `ASSERTIONS_SQL_QUERY_SCORE` (`ASSERTIONS_SQL_QUERY_SCORE`),
   KEY `ASSERTIONS_TOTAL_SCORE` (`ASSERTIONS_TOTAL_SCORE`),
   KEY `COMPLEX_MODEL` (`COMPLEX_MODEL`),
-  KEY `LANG` (`LANG`)
+  KEY `LANG` (`LANG`),
+  KEY `COMPLEX_QUESTION_PROCESSING_TIME` (`COMPLEX_QUESTION_PROCESSING_TIME`),
+  KEY `RESULT_ENTITY_PROCESSING_TIME` (`RESULT_ENTITY_PROCESSING_TIME`),
+  KEY `EMBEDDINGS_CACHE_SEARCH_TIME` (`EMBEDDINGS_CACHE_SEARCH_TIME`),
+  KEY `ENTITY_RESOLUTION_PLANNING_TIME` (`ENTITY_RESOLUTION_PLANNING_TIME`),
+  KEY `ENTITY_RAW_FALLBACK_COUNT` (`ENTITY_RAW_FALLBACK_COUNT`),
+  KEY `NO_ENTITY_EXTRACTED` (`NO_ENTITY_EXTRACTED`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
