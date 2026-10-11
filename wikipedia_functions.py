@@ -49,7 +49,7 @@ from wikipedia_page_writer import (
     f_fetchlangpayload,
     f_writelangtodb,
 )
-from wikipedia_queries import CONTENT_SQL_BUILDERS
+from wikipedia_queries import CONTENT_SOURCE_FILTERS, CONTENT_SQL_BUILDERS
 
 STRPROPS = "sitelinks"
 
@@ -182,6 +182,12 @@ def _buildsourcesql(strcontent, strresumeid):
         "WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> '' "
         "AND ID_WIKIDATA REGEXP '^Q[0-9]+$' "
     )
+    # A family's own row filter (sourcework: DELETED and the 'screen' sources that have
+    # a T2S sheet) is not ownership, it is what the family refuses to crawl at all, so
+    # it survives the bypass.
+    strsourcefilter = CONTENT_SOURCE_FILTERS.get(strcontent, "")
+    if strsourcefilter:
+        strsql += "AND " + strsourcefilter
     if strresumeid != "":
         # Same quoting rule as the builders in wikipedia_queries: the Qid-keyed families
         # compare strings, the TMDB-keyed ones compare integers.

@@ -28,8 +28,27 @@ The table below lists every entity family processed by `wikipedia_crawler.py`, i
 | 220 | `episode`           | `T_WC_TMDB_EPISODE`         | _(planned: `T_WC_WIKIDATA_EPISODE_V1.WIKIPEDIA_POSTER_PATH` — see [Planned future work](#planned-future-work))_ |
 | 221 | `keyword`           | `T_WC_TMDB_KEYWORD`         | _(not yet configured)_                                   |
 | 222 | `season`            | `T_WC_TMDB_SEASON`          | _(planned: `T_WC_WIKIDATA_SEASON_V1.WIKIPEDIA_POSTER_PATH` — see [Planned future work](#planned-future-work))_ |
+| 224 | `sourcework`        | `T_WC_T2S_SOURCE_WORK`      | `T_WC_T2S_SOURCE_WORK.WIKIPEDIA_IMAGE_PATH`              |
 
 For every row of every entity family, page metadata, page sections, and page images are written to the shared `T_WC_WIKIPEDIA_PAGE_LANG*` tables regardless of whether an "Image target" is configured. The "Image target" column only controls where the **main** image URL is additionally written back into the entity's own table.
+
+### `sourcework` (224): the "based on" sources
+
+Added for WIKIPEDIA-CRAWLER-023. `T_WC_T2S_SOURCE_WORK` is built by process 73 of `tmdb-movie-preprocess` (Wikidata P144: the novel, manga, play, game or film a film or series is based on). Until this family existed nothing selected those rows by themselves, so a source no earlier family happened to own had neither long text nor main image.
+
+Row filter (`SOURCEWORK_ROW_FILTER` in [wikipedia_queries.py](wikipedia_queries.py)), applied in a full crawl **and** under `--no-exclusions`:
+
+- `DELETED = 0`: process 73 keeps the sources that left the perimeter as `DELETED = 1`; they are not served, so not crawled.
+- a source of type `screen` that has an `ID_MOVIE` or `ID_SERIE` is skipped: its Wikipedia page is the page of that T2S film or series, already crawled by `201 movie` / `204 serie`, and the source-work sheet points to that sheet. A `screen` source without a T2S sheet stays in, since nothing else would crawl it.
+
+It runs last and applies the whole exclusion chain (everything `season` excludes, plus `T_WC_TMDB_SEASON`), so in a full crawl it only owns the sources no other family reaches. That loses nothing: whoever crawls a source writes its sections and its per-language lead image under the same `ID_WIKIDATA`, in `T_WC_WIKIPEDIA_PAGE_LANG_SECTION` and `T_WC_WIKIPEDIA_PAGE_LANG.MAIN_IMAGE_URL`. Process 71 of `tmdb-movie-preprocess` copies that `MAIN_IMAGE_URL` into `T_WC_T2S_SOURCE_WORK.WIKIPEDIA_MAIN_IMAGE_URL` / `_FR` (it already lists `SOURCE_WORK` among its entities), and the fiche reads the sections by `(ID_WIKIDATA, LANG)`. To refresh every source work regardless of ownership, for instance after the first build of the table:
+
+```bash
+./wikipedia-crawler-manual.sh --content-all sourcework --no-exclusions
+./wikipedia-crawler-manual.sh Q129778 --item-type sourcework   # one work: Heart of Darkness
+```
+
+Coverage before and after a pass, and the three reference works (Heart of Darkness, Dracula, Nineteen Eighty-Four): [doc/sql/sourcework-wikipedia-coverage.sql](doc/sql/sourcework-wikipedia-coverage.sql), read-only.
 
 ## What the crawler does
 
@@ -54,6 +73,7 @@ The crawler processes multiple content types in sequence:
 - `episode`
 - `keyword`
 - `season`
+- `sourcework`
 
 For each content type, it:
 
@@ -158,6 +178,7 @@ The crawler currently associates image results with these destination tables/col
 - `nomination` -> `T_WC_WIKIDATA_ITEM_V1.WIKIPEDIA_IMAGE_PATH`
 - `topic` -> `T_WC_WIKIDATA_ITEM_V1.WIKIPEDIA_IMAGE_PATH`
 - `character` -> `T_WC_TMDB_CHARACTER.WIKIPEDIA_IMAGE_PATH`
+- `sourcework` -> `T_WC_T2S_SOURCE_WORK.WIKIPEDIA_IMAGE_PATH` (the serving columns `WIKIPEDIA_MAIN_IMAGE_URL` / `_FR` are filled by process 71 of `tmdb-movie-preprocess` from `T_WC_WIKIPEDIA_PAGE_LANG.MAIN_IMAGE_URL`)
 
 The following content families still store full page-level image rows in `T_WC_WIKIPEDIA_PAGE_LANG_IMAGE`, but do not currently write the main image URL back into a source-table image column:
 
@@ -289,6 +310,7 @@ The `other` family is split into multiple independent resumable processes:
 - `220` -> `episode`
 - `221` -> `keyword`
 - `222` -> `season`
+- `224` -> `sourcework`
 
 To avoid crawling the same Wikidata entity multiple times during a full run, the crawler applies deduplication by process precedence.
 
@@ -314,6 +336,7 @@ The process order is:
 - `episode`
 - `keyword`
 - `season`
+- `sourcework`
 
 Each later process excludes entities already owned by earlier families in that order. Note that `wikidatacharacter` (process 205, sourced from `T_WC_WIKIDATA_CHARACTER_V1`) and `character` (process 218, sourced from `T_WC_TMDB_CHARACTER`) are two distinct processes operating on character entities from different upstream tables. The Wikidata-native source runs first; the TMDB-sourced process then excludes any IDs already covered by it.
 
@@ -324,6 +347,7 @@ Examples:
 - `movement` excludes everything excluded by `list`, plus entities already covered by `list`
 - `topic` excludes all earlier families in the chain
 - `season` excludes all earlier families plus `character`, `tmdbcollection`, `episode`, and `keyword`
+- `sourcework` excludes everything `season` excludes, plus `season`; it also applies its own row filter (`DELETED`, and `screen` sources that have a T2S film or series sheet)
 
 This keeps image enrichment targeted at the configured destination column for each family while still preventing duplicate crawling across the full run.
 
@@ -364,6 +388,7 @@ At startup, the crawler reads this variable and adjusts `arrprocessscope`:
 - if `episode`, it resumes directly from `episode`
 - if `keyword`, it resumes directly from `keyword`
 - if `season`, it resumes directly from `season`
+- if `sourcework`, it resumes directly from `sourcework`
 
 At the end of each content family, it advances `strwikipediacrawlercurrentcontent` to the next stage.
 
@@ -392,6 +417,7 @@ For each content family, the crawler keeps the last processed identifier in a se
 - `strwikipediacrawlerepisodeid`
 - `strwikipediacrawlerkeywordid`
 - `strwikipediacrawlerseasonid`
+- `strwikipediacrawlersourceworkid`
 
 These values are read at startup and injected into the SQL query using conditions such as:
 
@@ -469,6 +495,7 @@ Then the families the exclusion chain has absorbed, or is expected to absorb:
 | 18       | 213 | `group`          | **0**         | fully absorbed |
 | 19       | 214 | `death`          | **0**         | fully absorbed |
 | 20       | 215 | `award`          | **0**         | fully absorbed |
+| 21       | 224 | `sourcework`     | not measured  | added 2026-10-11; partly absorbed by `201 movie` and `203 item` |
 
 Two consequences of absorption are worth knowing before reading these tables as "content is missing". The content is **not** missing: it is stored under the `ITEM_TYPE` of the family that actually crawled it, so a consumer filtering on `ITEM_TYPE = 'award'` finds nothing while the pages sit there under `item`. And the family's own main-image column is only ever written for the rows it selects, so `T_WC_T2S_TECHNICAL.WIKIPEDIA_IMAGE_PATH` was filled for those 28 technical entities and stays empty for any technical entity that is also an item — that one's image went to `T_WC_WIKIDATA_ITEM_V1.WIKIPEDIA_IMAGE_PATH`.
 
@@ -491,7 +518,7 @@ wf.f_wikipediaqidtosqleverything("Q42",    strcontent="person")  # a person
 wf.f_wikipediaqidtosqleverything("Q1234",  strcontent="serie", arrlanguages=("fr",))  # French only
 ```
 
-`f_wikipediaqidtosqleverything(strwikidataid, strcontent="item", arrlanguages=("en", "fr"))` runs the exact per-entity pipeline the full crawler runs for one row: it resolves the `en`/`fr` page titles from Wikidata, then writes page metadata to `T_WC_WIKIPEDIA_PAGE_LANG`, every page image to `T_WC_WIKIPEDIA_PAGE_LANG_IMAGE`, and structured sections to `T_WC_WIKIPEDIA_PAGE_LANG_SECTION`, plus the content-specific main-image writeback and (for `strcontent="movie"`) the French `Fiche technique` Format line. `strcontent` must be one of the entity families listed in [Entities crawled](#entities-crawled) (`movie`, `person`, `item`, `serie`, `wikidatacharacter`, `other`, `list`, `movement`, `collection`, `group`, `death`, `award`, `nomination`, `topic`, `technical`, `character`, `tmdbcollection`, `episode`, `keyword`, `season`); it selects the main-image destination column and enables movie-only enrichment.
+`f_wikipediaqidtosqleverything(strwikidataid, strcontent="item", arrlanguages=("en", "fr"))` runs the exact per-entity pipeline the full crawler runs for one row: it resolves the `en`/`fr` page titles from Wikidata, then writes page metadata to `T_WC_WIKIPEDIA_PAGE_LANG`, every page image to `T_WC_WIKIPEDIA_PAGE_LANG_IMAGE`, and structured sections to `T_WC_WIKIPEDIA_PAGE_LANG_SECTION`, plus the content-specific main-image writeback and (for `strcontent="movie"`) the French `Fiche technique` Format line. `strcontent` must be one of the entity families listed in [Entities crawled](#entities-crawled) (`movie`, `person`, `item`, `serie`, `wikidatacharacter`, `other`, `list`, `movement`, `collection`, `group`, `death`, `award`, `nomination`, `topic`, `technical`, `character`, `tmdbcollection`, `episode`, `keyword`, `season`, `sourcework`); it selects the main-image destination column and enables movie-only enrichment.
 
 ### One whole family (`--content-all`)
 
@@ -518,7 +545,7 @@ Most `T_WC_T2S_*` families select **0 rows** in a normal run, and that is not a 
 ./wikipedia-crawler-manual.sh --content-all death --no-exclusions --limit 50
 ```
 
-The query is built from `CONTENT_CONFIG`'s `sourcetable` / `idcolumn`, with the `^Q[0-9]+$` guard applied to every family (including those whose own builder omits it), so a malformed id never reaches the Wikidata API. `--resume-from` and `--limit` work as usual. `other` has no source table — a single hard-coded Qid — so the flag prints a notice and changes nothing there.
+The query is built from `CONTENT_CONFIG`'s `sourcetable` / `idcolumn`, with the `^Q[0-9]+$` guard applied to every family (including those whose own builder omits it), so a malformed id never reaches the Wikidata API. A family's own row filter (`CONTENT_SOURCE_FILTERS` in [wikipedia_queries.py](wikipedia_queries.py), today only `sourcework`) is kept: it is not ownership but what the family refuses to crawl at all. `--resume-from` and `--limit` work as usual. `other` has no source table (a single hard-coded Qid), so the flag prints a notice and changes nothing there.
 
 Two effects to be aware of, neither harmful:
 

@@ -42,6 +42,7 @@ from wikipedia_queries import (
     build_person_sql,
     build_season_sql,
     build_serie_sql,
+    build_sourcework_sql,
     build_technical_sql,
     build_tmdb_collection_sql,
     build_topic_sql,
@@ -110,6 +111,7 @@ arrquickprocessids = [
     213,  # group           (0 rows)
     214,  # death           (0 rows)
     215,  # award           (0 rows)
+    224,  # sourcework      (added 2026-10-11, not measured; partly absorbed by 201/203)
 ]
 
 
@@ -169,6 +171,7 @@ try:
             strepisodeidold = cp.f_getservervariable("strwikipediacrawlerepisodeid",0)
             strkeywordidold = cp.f_getservervariable("strwikipediacrawlerkeywordid",0)
             strseasonidold = cp.f_getservervariable("strwikipediacrawlerseasonid",0)
+            strsourceworkidold = cp.f_getservervariable("strwikipediacrawlersourceworkid",0)
             strcurrentcontent = cp.f_getservervariable("strwikipediacrawlercurrentcontent",0)
             arrprocesses = [
                 {
@@ -330,6 +333,20 @@ try:
                     "sqlbuilder": build_season_sql,
                     "imagetable": "",
                     "imagecolumn": "",
+                },
+                {
+                    # WIKIPEDIA-CRAWLER-023: the "based on" sources (T_WC_T2S_SOURCE_WORK,
+                    # built by process 73 of tmdb-movie-preprocess). Last in the chain, so
+                    # it only owns the sources no earlier family crawled (a novel, a manga,
+                    # a play that is nobody's item). Whoever crawls a source, its lead image
+                    # lands in T_WC_WIKIPEDIA_PAGE_LANG.MAIN_IMAGE_URL, keyed by Qid, which
+                    # is what process 71 copies into the source work's image columns.
+                    "id": 224,
+                    "content": "sourcework",
+                    "resumeid": strsourceworkidold,
+                    "sqlbuilder": build_sourcework_sql,
+                    "imagetable": "T_WC_T2S_SOURCE_WORK",
+                    "imagecolumn": "WIKIPEDIA_IMAGE_PATH",
                 },
             ]
             resume_index = 0

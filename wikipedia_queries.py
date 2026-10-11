@@ -1,6 +1,6 @@
 """Per-family row-selection SQL for the Wikipedia crawler.
 
-Every entity family (movie, person, item, ... technical, season) selects its rows
+Every entity family (movie, person, item, ... technical, season, sourcework) selects its rows
 with a ``build_<family>_sql(strresumeid)`` builder: the family's source table, the
 chain of exclusions that stops an entity already owned by an earlier family from
 being crawled twice, and an optional ``>= resume id`` lower bound.
@@ -487,6 +487,62 @@ def build_technical_sql(strresumeid):
     return strsql
 
 
+# WIKIPEDIA-CRAWLER-023: the rows of T_WC_T2S_SOURCE_WORK (the "based on" sources,
+# Wikidata P144, built by process 73 of tmdb-movie-preprocess) that deserve a crawl.
+#
+# - DELETED: process 73 keeps the sources that left the perimeter as DELETED = 1 so
+#   their ID_SOURCE_WORK is never reused; they are not served, so not crawled.
+# - 'screen' sources with a T2S sheet: when the source is itself a film or a series
+#   known to T2S (ID_MOVIE / ID_SERIE set), its Wikipedia page is already that film's
+#   or series' page, crawled by 201 movie / 204 serie, and the source-work fiche points
+#   to that sheet. A 'screen' source WITHOUT a T2S sheet (a film TMDb does not have)
+#   stays in: nothing else would crawl it.
+#
+# Kept as a constant because the `--no-exclusions` path of wikipedia_functions.py
+# builds its own query from the source table and must apply the same row filter.
+SOURCEWORK_ROW_FILTER = (
+    "COALESCE(DELETED, 0) = 0 "
+    "AND NOT (COALESCE(SOURCE_WORK_TYPE, '') = 'screen' "
+    "AND (ID_MOVIE IS NOT NULL OR ID_SERIE IS NOT NULL)) "
+)
+
+def build_sourcework_sql(strresumeid):
+    strresumeid = normalize_resumeid(strresumeid)
+    strsql = ""
+    strsql += "SELECT DISTINCT T_WC_T2S_SOURCE_WORK.ID_SOURCE_WORK AS id, ID_WIKIDATA FROM T_WC_T2S_SOURCE_WORK "
+    strsql += "WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> '' "
+    strsql += "AND ID_WIKIDATA REGEXP '^Q[0-9]+$' "
+    strsql += "AND " + SOURCEWORK_ROW_FILTER
+    strsql = append_exclusion_tables(strsql, [
+        "T_WC_WIKIDATA_MOVIE_V1",
+        "T_WC_WIKIDATA_PERSON_V1",
+        "T_WC_WIKIDATA_ITEM_V1",
+        "T_WC_WIKIDATA_SERIE_V1",
+        "T_WC_WIKIDATA_CHARACTER_V1",
+    ])
+    strsql = append_exclusion_queries(strsql, [
+        "SELECT 'Q1204187' AS ID_WIKIDATA FROM DUAL",
+        "SELECT DISTINCT ID_WIKIDATA FROM T_WC_T2S_LIST WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> ''",
+        "SELECT DISTINCT ID_WIKIDATA FROM T_WC_T2S_MOVEMENT WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> ''",
+        "SELECT DISTINCT ID_WIKIDATA FROM T_WC_T2S_COLLECTION WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> ''",
+        "SELECT DISTINCT ID_WIKIDATA FROM T_WC_T2S_GROUP WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> ''",
+        "SELECT DISTINCT ID_WIKIDATA FROM T_WC_T2S_DEATH WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> ''",
+        "SELECT DISTINCT ID_WIKIDATA FROM T_WC_T2S_AWARD WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> ''",
+        "SELECT DISTINCT ID_WIKIDATA FROM T_WC_T2S_NOMINATION WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> ''",
+        "SELECT DISTINCT ID_WIKIDATA FROM T_WC_T2S_TOPIC WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> ''",
+        "SELECT DISTINCT ID_WIKIDATA FROM T_WC_T2S_TECHNICAL WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> ''",
+        "SELECT DISTINCT ID_WIKIDATA FROM T_WC_TMDB_CHARACTER WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> ''",
+        "SELECT DISTINCT ID_WIKIDATA FROM T_WC_TMDB_COLLECTION WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> ''",
+        "SELECT DISTINCT ID_WIKIDATA FROM T_WC_TMDB_EPISODE WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> ''",
+        "SELECT DISTINCT ID_WIKIDATA FROM T_WC_TMDB_KEYWORD WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> ''",
+        "SELECT DISTINCT ID_WIKIDATA FROM T_WC_TMDB_SEASON WHERE ID_WIKIDATA IS NOT NULL AND ID_WIKIDATA <> ''",
+    ])
+    if strresumeid != "":
+        strsql += "AND ID_SOURCE_WORK >= " + strresumeid + " "
+    strsql += "ORDER BY ID_SOURCE_WORK ASC "
+    return strsql
+
+
 # content family -> row-selection builder. The keys are the CONTENT_CONFIG keys in
 # wikipedia_page_writer.py (i.e. the ITEM_TYPE written to the database), which is what
 # `--content-all` takes on the command line.
@@ -517,4 +573,13 @@ CONTENT_SQL_BUILDERS = {
     "episode":           build_episode_sql,
     "keyword":           build_keyword_sql,
     "season":            build_season_sql,
+    "sourcework":        build_sourcework_sql,
+}
+
+
+# Extra row filter a family applies to its source table on top of the ID_WIKIDATA
+# guard, honoured by the `--no-exclusions` path too (wikipedia_functions._buildsourcesql),
+# so bypassing the ownership chain never resurrects rows the family itself refuses.
+CONTENT_SOURCE_FILTERS = {
+    "sourcework": SOURCEWORK_ROW_FILTER,
 }

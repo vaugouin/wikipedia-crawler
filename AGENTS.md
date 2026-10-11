@@ -27,7 +27,9 @@ Pipeline stages:
 - **Maintenance & tooling** — `plex-duplicates`, `subtitle-translate`, `powershell`, `playwright-test`.
 - **Monitoring & observability** — `data-monitoring`, `pipeline-3d` (three.js replay of one question's execution trace through `voice-agent` and `fastapi-text2sql`).
 
-**This repository's role:** Acquisition stage. Fetches Wikipedia article sections (English and French) for Wikidata-linked movies, series, persons, and generic items into the `T_WC_WIKIPEDIA_*` tables, and extracts French «Fiche technique» film-format metadata. Its content is consumed by `tmdb-movie-preprocess` and rendered in the Wikipedia sections of `tmdb-front`.
+**This repository's role:** Acquisition stage. Fetches Wikipedia article sections (English and French) for Wikidata-linked movies, series, persons, generic items and the T2S entity families (lists, movements, awards, technical, source works...) into the `T_WC_WIKIPEDIA_*` tables, and extracts French «Fiche technique» film-format metadata. Its content is consumed by `tmdb-movie-preprocess` and rendered in the Wikipedia sections of `tmdb-front`.
+
+**Adding an entity family** (last done for `sourcework`, process 224, WIKIPEDIA-CRAWLER-023) touches four places that must stay in sync: a `build_<family>_sql` in `wikipedia_queries.py` plus its `CONTENT_SQL_BUILDERS` key, a `CONTENT_CONFIG` entry in `wikipedia_page_writer.py` (same process id, image table/column, source table/id column), the import, resume server variable and `arrprocesses` entry in `wikipedia_crawler.py` (next free id, 2xx; appended last so the exclusion chain of earlier families is unchanged), and `arrquickprocessids`. A row filter the family applies to its own source table goes in `CONTENT_SOURCE_FILTERS` so `--no-exclusions` keeps it. Then the README lists (entities table, process order, resume variables, quick-mode table). The lead image needs no wiring downstream: every family writes `T_WC_WIKIPEDIA_PAGE_LANG.MAIN_IMAGE_URL`, which process 71 of `tmdb-movie-preprocess` copies into the T2S tables it lists.
 
 ---
 
@@ -95,7 +97,7 @@ This crawler is built and run as a Docker container via the repo's root `Dockerf
 
 ---
 
-**Last Updated**: 2026-06-03
+**Last Updated**: 2026-10-11
 **Current Version**: 1.0.0 
 
 ## Backlog (Nestor second-brain)

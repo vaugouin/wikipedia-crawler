@@ -59,6 +59,10 @@ CONTENT_CONFIG = {
     "episode":           {"id": 220, "imagetable": "",                           "imagecolumn": "",                       "sourcetable": "T_WC_TMDB_EPISODE",       "idcolumn": "ID_EPISODE"},
     "keyword":           {"id": 221, "imagetable": "",                           "imagecolumn": "",                       "sourcetable": "T_WC_TMDB_KEYWORD",       "idcolumn": "ID_KEYWORD"},
     "season":            {"id": 222, "imagetable": "",                           "imagecolumn": "",                       "sourcetable": "T_WC_TMDB_SEASON",        "idcolumn": "ID_SEASON"},
+    # WIKIPEDIA-CRAWLER-023. The image column is the legacy per-entity copy, like
+    # technical's; the one tmdb-movie-preprocess process 71 reads is
+    # T_WC_WIKIPEDIA_PAGE_LANG.MAIN_IMAGE_URL (per language), written for every family.
+    "sourcework":        {"id": 224, "imagetable": "T_WC_T2S_SOURCE_WORK",       "imagecolumn": "WIKIPEDIA_IMAGE_PATH",   "sourcetable": "T_WC_T2S_SOURCE_WORK",    "idcolumn": "ID_SOURCE_WORK"},
 }
 
 
