@@ -1,0 +1,38 @@
+-- sourcework-wikipedia-coverage.sql
+-- run on vaugouindb (container damp-vaugouin-com-mariadb-1) at 2026-10-11 12:01:59
+--
++-------------------------------------------+
+| SECTION                                   |
++-------------------------------------------+
+| 1. Rows selected by the sourcework family |
++-------------------------------------------+
++----------+--------------+--------------------------------+------------------------+---------------------+
+| ALL_ROWS | DELETED_ROWS | SCREEN_WITH_T2S_SHEET_EXCLUDED | SELECTED_NO_EXCLUSIONS | SELECTED_WITH_CHAIN |
++----------+--------------+--------------------------------+------------------------+---------------------+
+|    17470 |            4 |                           2797 |                  14669 |                1941 |
++----------+--------------+--------------------------------+------------------------+---------------------+
++------------------------------------------------------------+
+| SECTION                                                    |
++------------------------------------------------------------+
+| 2. Wikipedia coverage of the source works the family keeps |
++------------------------------------------------------------+
++--------------+---------+---------+-------------+-------------+---------------+---------------+--------------+--------------+
+| SOURCE_WORKS | PAGE_EN | PAGE_FR | SECTIONS_EN | SECTIONS_FR | MAIN_IMAGE_EN | MAIN_IMAGE_FR | T2S_IMAGE_EN | T2S_IMAGE_FR |
++--------------+---------+---------+-------------+-------------+---------------+---------------+--------------+--------------+
+|        14669 |    9552 |    5316 |        9599 |        5337 |          9050 |          4281 |         9050 |         4281 |
++--------------+---------+---------+-------------+-------------+---------------+---------------+--------------+--------------+
++------------------------------------------+
+| SECTION                                  |
++------------------------------------------+
+| 3. Reference works, one row per language |
++------------------------------------------+
++----------------+-------------+----------------------+------------------+----------+----------+------+-----------+-------------------------+---------------------+-------------------------------------------------------------------------------------------------------------------------------+--------------+-------------------------------------------------------------------------------------------------------------------------------+
+| ID_SOURCE_WORK | ID_WIKIDATA | SOURCE_WORK_NAME     | SOURCE_WORK_TYPE | ID_MOVIE | ID_SERIE | LANG | ITEM_TYPE | WIKIPEDIA_PAGE_TITLE    | LAST_SUCCESS_AT     | MAIN_IMAGE_URL                                                                                                                | SECTION_ROWS | T2S_IMAGE                                                                                                                     |
++----------------+-------------+----------------------+------------------+----------+----------+------+-----------+-------------------------+---------------------+-------------------------------------------------------------------------------------------------------------------------------+--------------+-------------------------------------------------------------------------------------------------------------------------------+
+|           3909 | Q129778     | Heart of Darkness    | literary         |     NULL |     NULL | en   | item      | Heart of Darkness       | 2026-10-08 15:41:23 | https://upload.wikimedia.org/wikipedia/commons/4/4a/Blackwood%27s_Magazine_-_1899_cover.jpg                                   |           14 | https://upload.wikimedia.org/wikipedia/commons/4/4a/Blackwood%27s_Magazine_-_1899_cover.jpg                                   |
+|           3909 | Q129778     | Heart of Darkness    | literary         |     NULL |     NULL | fr   | item      | Au cœur des ténèbres    | 2026-10-08 15:41:23 | https://upload.wikimedia.org/wikipedia/commons/4/4a/Blackwood%27s_Magazine_-_1899_cover.jpg                                   |           14 | https://upload.wikimedia.org/wikipedia/commons/4/4a/Blackwood%27s_Magazine_-_1899_cover.jpg                                   |
+|           7358 | Q208460     | Nineteen Eighty-Four | literary         |     NULL |     NULL | en   | item      | Nineteen Eighty-Four    | 2026-10-10 07:02:04 | https://upload.wikimedia.org/wikipedia/commons/5/51/1984_first_edition_cover.jpg                                              |           27 | https://upload.wikimedia.org/wikipedia/commons/5/51/1984_first_edition_cover.jpg                                              |
+|           7358 | Q208460     | Nineteen Eighty-Four | literary         |     NULL |     NULL | fr   | item      | 1984 (roman)            | 2026-10-10 07:02:04 | https://thumb.wikimedia.org/wikipedia/commons/thumb/e/eb/1984JLH1.jpg/3840px-1984JLH1.jpg                                     |           30 | https://thumb.wikimedia.org/wikipedia/commons/thumb/e/eb/1984JLH1.jpg/3840px-1984JLH1.jpg                                     |
+|          11237 | Q41542      | Dracula              | literary         |     NULL |     NULL | en   | item      | Dracula                 | 2026-09-25 05:16:09 | https://thumb.wikimedia.org/wikipedia/commons/thumb/e/e0/Dracula-First-Edition-1897.jpg/3840px-Dracula-First-Edition-1897.jpg |           20 | https://thumb.wikimedia.org/wikipedia/commons/thumb/e/e0/Dracula-First-Edition-1897.jpg/3840px-Dracula-First-Edition-1897.jpg |
+|          11237 | Q41542      | Dracula              | literary         |     NULL |     NULL | fr   | item      | Dracula                 | 2026-09-25 05:16:09 | https://thumb.wikimedia.org/wikipedia/commons/thumb/e/e0/Dracula-First-Edition-1897.jpg/3840px-Dracula-First-Edition-1897.jpg |           23 | https://thumb.wikimedia.org/wikipedia/commons/thumb/e/e0/Dracula-First-Edition-1897.jpg/3840px-Dracula-First-Edition-1897.jpg |
++----------------+-------------+----------------------+------------------+----------+----------+------+-----------+-------------------------+---------------------+-------------------------------------------------------------------------------------------------------------------------------+--------------+-------------------------------------------------------------------------------------------------------------------------------+
