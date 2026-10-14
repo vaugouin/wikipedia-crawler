@@ -6,11 +6,14 @@
 -- and the crawler writes the real lead image back on the next pass if the page has one.
 -- Writes outside the agent's five tables: run by Philippe with runsqlvaugouindb.sh.
 
-CREATE TEMPORARY TABLE TMP_SHARED_MAIN_IMAGE AS
-SELECT MAIN_IMAGE_URL, COUNT(DISTINCT ID_WIKIDATA) AS ENTITY_COUNT
+-- Keyed on the MD5 of the URL: the URL itself (varchar(1000) utf8mb4) is too long to index,
+-- and without a key the UPDATE below rescanned the 1.1M-row table once per URL (first run,
+-- 2026-10-14, still busy after 40 minutes). With the key, one scan, one lookup per row.
+CREATE TEMPORARY TABLE TMP_SHARED_MAIN_IMAGE (PRIMARY KEY (URL_HASH)) AS
+SELECT UNHEX(MD5(MAIN_IMAGE_URL)) AS URL_HASH, MIN(MAIN_IMAGE_URL) AS MAIN_IMAGE_URL, COUNT(DISTINCT ID_WIKIDATA) AS ENTITY_COUNT
 FROM T_WC_WIKIPEDIA_PAGE_LANG
 WHERE MAIN_IMAGE_URL IS NOT NULL AND MAIN_IMAGE_URL <> ''
-GROUP BY MAIN_IMAGE_URL
+GROUP BY UNHEX(MD5(MAIN_IMAGE_URL))
 HAVING ENTITY_COUNT >= 25;
 
 -- 1. The trace: every URL about to be cleared, most shared first (read it: a legitimate image here would be a surprise).
@@ -19,9 +22,10 @@ SELECT ENTITY_COUNT, MAIN_IMAGE_URL FROM TMP_SHARED_MAIN_IMAGE ORDER BY ENTITY_C
 SELECT COUNT(*) AS URLS, SUM(ENTITY_COUNT) AS ENTITIES FROM TMP_SHARED_MAIN_IMAGE;
 
 -- 2. The clear.
-UPDATE T_WC_WIKIPEDIA_PAGE_LANG p
-INNER JOIN TMP_SHARED_MAIN_IMAGE s ON s.MAIN_IMAGE_URL = p.MAIN_IMAGE_URL
-SET p.MAIN_IMAGE_URL = '';
+UPDATE T_WC_WIKIPEDIA_PAGE_LANG
+SET MAIN_IMAGE_URL = ''
+WHERE MAIN_IMAGE_URL <> ''
+  AND UNHEX(MD5(MAIN_IMAGE_URL)) IN (SELECT URL_HASH FROM TMP_SHARED_MAIN_IMAGE);
 
 SELECT ROW_COUNT() AS ROWS_CLEARED;
 
