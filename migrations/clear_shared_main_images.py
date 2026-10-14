@@ -55,6 +55,11 @@ MAIN_IMAGE_TARGETS = [
     ("T_WC_WIKIDATA_PERSON_V1", "ID_WIKIDATA", "WIKIPEDIA_PROFILE_PATH"),
     ("T_WC_WIKIDATA_CHARACTER_V1", "ID_WIKIDATA", "WIKIPEDIA_PROFILE_PATH"),
     ("T_WC_T2S_TECHNICAL", "ID_TECHNICAL", "WIKIPEDIA_IMAGE_PATH"),
+    # The per-language home of the main image since WIKIPEDIA-CRAWLER-020, and the
+    # one tmdb-movie-preprocess process 71 serves. Missing from this list until
+    # 2026-10-14, which is how 5107 French pages kept Apollo_11_Crew.jpg after the
+    # first sweep. Cleared to '' ("no lead image"), which process 71 now copies.
+    ("T_WC_WIKIPEDIA_PAGE_LANG", "ID_WIKIDATA", "MAIN_IMAGE_URL"),
 ]
 
 

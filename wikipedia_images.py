@@ -87,7 +87,10 @@ def get_wikipedia_main_image_url(title: str, lang: str) -> str:
         if isinstance(thumb, dict) and thumb.get("source"):
             return thumb["source"].split("?", 1)[0]
 
-    raise RuntimeError(f"No main image found in summary for '{title}' ({lang})")
+    # WIKIPEDIA-CRAWLER-019: a successful answer without an image is an answer, not an
+    # error. Return "" so the caller can tell "the page has no lead image" (store it
+    # empty) from "the request failed" (an exception, keep what is stored).
+    return ""
 
 # MediaWiki UI chrome / template decoration files. These are embedded on most
 # Wikipedia pages by infoboxes, External-links sections, protection notices,

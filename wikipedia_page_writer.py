@@ -86,6 +86,8 @@ def f_fetchlangpayload(session, wikidata_id, page_title, strkey, strlanguage, ne
         "page_title": page_title,
         "page_url": strwikipediapageurl,
         "main_image_url": "",
+        # True once the summary endpoint has answered, with or without an image.
+        "main_image_checked": False,
         "page_images": [],
         "http_status": None,
         "success": False,
@@ -99,13 +101,12 @@ def f_fetchlangpayload(session, wikidata_id, page_title, strkey, strlanguage, ne
             strmainimageurl = wimg.get_wikipedia_main_image_url(page_title, strlanguage)
             # WIKIPEDIA-CRAWLER-019: the summary endpoint occasionally returns a
             # maintenance banner or an edit icon as the "lead" image. Storing it
-            # states something false about the subject, so drop it and let the
-            # fallback below look for a real picture.
+            # states something false about the subject, so drop it: no image.
             if strmainimageurl and not wimg.is_acceptable_main_image_url(strmainimageurl):
                 print(f"Main image rejected (UI chrome) for {wikidata_id} ({strlanguage}): {strmainimageurl}")
                 strmainimageurl = ""
-            if strmainimageurl:
-                payload["main_image_url"] = strmainimageurl
+            payload["main_image_url"] = strmainimageurl
+            payload["main_image_checked"] = True
         except Exception as err:
             print(f"Main image retrieval error for {wikidata_id} ({strlanguage}): {err}")
 
@@ -318,9 +319,19 @@ def f_writelangtodb(payload, lngid, wikidata_id, strlanguage, strcontent, intind
     # languages, which is precisely how the French pass overwrote the English lead
     # image of collection 4845 with a portal banner.
     #
-    # Only written when a lead image was actually resolved: never a guess, never a
-    # blanking of what a previous successful crawl had found (same rule as correctif B).
-    if strmainimageurl:
+    # Written whenever the summary endpoint ANSWERED, image or not: an empty string
+    # means "Wikipedia says this page has no lead image", NULL means "never checked".
+    # A failed request leaves the column untouched, so a network error never costs
+    # an image found earlier. Blanking on a real answer is what lets a re-crawl undo
+    # the values the removed fallback wrote: 5107 French pages still carried the
+    # "Portail:Années 1960" photo (Apollo_11_Crew.jpg) in 2026-10, Dollars Trilogy
+    # and Once Upon a Time trilogy among them, because the old rule kept every
+    # stored value forever (WIKIPEDIA-CRAWLER-019).
+    #
+    # The legacy per-entity column above keeps the "never blank" rule on purpose: it
+    # is shared by both languages, so blanking it on the French pass would erase the
+    # image the English pass had just found.
+    if payload.get("main_image_checked"):
         arrcouples["MAIN_IMAGE_URL"] = strmainimageurl
     strsqltablename = "T_WC_WIKIPEDIA_PAGE_LANG"
     strsqlupdatecondition = f"ID_WIKIDATA = '{wikidata_id}' AND LANG = '{strlanguage}'"
