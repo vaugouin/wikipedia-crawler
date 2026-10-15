@@ -1,0 +1,23 @@
+-- check-apollo-v1-leftovers-019.sql
+-- run on vaugouindb (container damp-vaugouin-com-mariadb-1) at 2026-10-15 05:14:02
+--
++-------------+-------------------------------------------------------------------------------------------------------------------+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| ID_WIKIDATA | WIKIPEDIA_IMAGE_PATH                                                                                              | PAGE_LANG_IMAGES                                                                                                                                                                                                                            |
++-------------+-------------------------------------------------------------------------------------------------------------------+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| Q468018     | https://upload.wikimedia.org/wikipedia/commons/3/3d/Apollo_11_Crew.jpg                                            | fr:                                                                                                                                                                                                                                         |
+| Q468018     | https://upload.wikimedia.org/wikipedia/commons/3/3d/Apollo_11_Crew.jpg                                            | fr:                                                                                                                                                                                                                                         |
+| Q190706     | https://upload.wikimedia.org/wikipedia/commons/e/ea/Apollo_11_Crew_During_Training_Exercise_-_GPN-2002-000032.jpg | en:https://upload.wikimedia.org/wikipedia/commons/e/ea/Apollo_11_Crew_During_Training_Exercise_-_GPN-2002-000032.jpg | fr:https://upload.wikimedia.org/wikipedia/commons/e/ea/Apollo_11_Crew_During_Training_Exercise_-_GPN-2002-000032.jpg |
+| Q190706     | https://upload.wikimedia.org/wikipedia/commons/e/ea/Apollo_11_Crew_During_Training_Exercise_-_GPN-2002-000032.jpg | en:https://upload.wikimedia.org/wikipedia/commons/e/ea/Apollo_11_Crew_During_Training_Exercise_-_GPN-2002-000032.jpg | fr:https://upload.wikimedia.org/wikipedia/commons/e/ea/Apollo_11_Crew_During_Training_Exercise_-_GPN-2002-000032.jpg |
++-------------+-------------------------------------------------------------------------------------------------------------------+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
++-------------+------+-----------+------------------------------------------------------+-------------------------------------------------------------------------------------------------------------------+
+| ID_WIKIDATA | LANG | ITEM_TYPE | WIKIPEDIA_PAGE_TITLE                                 | MAIN_IMAGE_URL                                                                                                    |
++-------------+------+-----------+------------------------------------------------------+-------------------------------------------------------------------------------------------------------------------+
+| Q190706     | en   | item      | Moon landing conspiracy theories                     | https://upload.wikimedia.org/wikipedia/commons/e/ea/Apollo_11_Crew_During_Training_Exercise_-_GPN-2002-000032.jpg |
+| Q190706     | fr   | item      | Théories conspirationnistes sur le programme Apollo  | https://upload.wikimedia.org/wikipedia/commons/e/ea/Apollo_11_Crew_During_Training_Exercise_-_GPN-2002-000032.jpg |
++-------------+------+-----------+------------------------------------------------------+-------------------------------------------------------------------------------------------------------------------+
++----------+-------------+---------+-------+-------+
+| SRC      | ID_WIKIDATA | IN_PATH | IN_EN | IN_FR |
++----------+-------------+---------+-------+-------+
+| T2S_ITEM | Q468018     |       1 |  NULL |     0 |
+| T2S_ITEM | Q190706     |       1 |     1 |     1 |
++----------+-------------+---------+-------+-------+
