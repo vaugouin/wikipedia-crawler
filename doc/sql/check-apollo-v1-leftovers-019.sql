@@ -1,0 +1,18 @@
+-- WIKIPEDIA-CRAWLER-019: the last Apollo_11_Crew.jpg after the 2026-10-15 process 71 run.
+-- Read-only. The V1 per-entity column was never blanked, and f_getwikidataimagepath
+-- (tmdb-movie-preprocess) falls back on it when the page of the requested language has no image.
+
+SELECT v.ID_WIKIDATA, v.WIKIPEDIA_IMAGE_PATH,
+  (SELECT GROUP_CONCAT(CONCAT(p.LANG, ':', IFNULL(p.MAIN_IMAGE_URL, 'NULL')) SEPARATOR ' | ')
+   FROM T_WC_WIKIPEDIA_PAGE_LANG p WHERE p.ID_WIKIDATA = v.ID_WIKIDATA) AS PAGE_LANG_IMAGES
+FROM T_WC_WIKIDATA_ITEM_V1 v
+WHERE v.WIKIPEDIA_IMAGE_PATH LIKE '%Apollo_11_Crew%';
+
+SELECT p.ID_WIKIDATA, p.LANG, p.ITEM_TYPE, p.WIKIPEDIA_PAGE_TITLE, p.MAIN_IMAGE_URL
+FROM T_WC_WIKIPEDIA_PAGE_LANG p WHERE p.MAIN_IMAGE_URL LIKE '%Apollo_11_Crew%';
+
+SELECT 'T2S_ITEM' AS SRC, i.ID_WIKIDATA, i.WIKIPEDIA_IMAGE_PATH LIKE '%Apollo_11_Crew%' AS IN_PATH,
+  i.WIKIPEDIA_MAIN_IMAGE_URL LIKE '%Apollo_11_Crew%' AS IN_EN, i.WIKIPEDIA_MAIN_IMAGE_URL_FR LIKE '%Apollo_11_Crew%' AS IN_FR
+FROM T_WC_T2S_ITEM i
+WHERE i.WIKIPEDIA_IMAGE_PATH LIKE '%Apollo_11_Crew%' OR i.WIKIPEDIA_MAIN_IMAGE_URL LIKE '%Apollo_11_Crew%'
+   OR i.WIKIPEDIA_MAIN_IMAGE_URL_FR LIKE '%Apollo_11_Crew%';
