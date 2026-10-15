@@ -1,0 +1,26 @@
+-- check-instant-add-column.sql
+-- run on vaugouindb (container damp-vaugouin-com-mariadb-1) at 2026-10-15 18:28:31
+--
++-----------------------------------------------------+
+| STEP                                                |
++-----------------------------------------------------+
+| plain mediumtext INSTANT on a temporary table: done |
++-----------------------------------------------------+
++----------------------------------------------------------+
+| STEP                                                     |
++----------------------------------------------------------+
+| COMPRESSED mediumtext INPLACE on a temporary table: done |
++----------------------------------------------------------+
++----------------------------------------------+
+| STEP                                         |
++----------------------------------------------+
+| int INSTANT on a small temporary table: done |
++----------------------------------------------+
+
+-- ---------------------------------------------------------------------
+-- mariadb stderr. The statements after each error below were still run
+-- (--force), so the results above are complete except for those.
+-- ---------------------------------------------------------------------
+ERROR 1845 (0A000) at line 4: ALGORITHM=INSTANT is not supported for this operation. Try ALGORITHM=COPY
+ERROR 1845 (0A000) at line 8: ALGORITHM=INPLACE is not supported for this operation. Try ALGORITHM=COPY
+ERROR 1845 (0A000) at line 12: ALGORITHM=INSTANT is not supported for this operation. Try ALGORITHM=COPY
