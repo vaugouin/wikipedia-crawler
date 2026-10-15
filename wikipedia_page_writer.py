@@ -97,6 +97,8 @@ def f_fetchlangpayload(session, wikidata_id, page_title, strkey, strlanguage, ne
         "sections": [],
         "links": [],
         "refs": [],
+        # {title: (qid, final_title, via_redirect)} from the API, resolved here in the worker (1.1.1).
+        "api_qids": {},
     }
 
     # Lead/main image — only for content types that store one.
@@ -192,6 +194,15 @@ def f_fetchlangpayload(session, wikidata_id, page_title, strkey, strlanguage, ne
                 payload["sections"] = converted["sections"]
                 payload["links"] = converted["links"]
                 payload["refs"] = converted["refs"]
+                # 1.1.1: the API lookup of the link targets runs here, in the fetch worker, for
+                # every live title. The worker cannot see which titles the local title join on
+                # the main thread will answer, so it asks about all of them: more API calls, but
+                # in parallel, instead of serialised on the thread that does every database write.
+                try:
+                    payload["api_qids"] = wcmd.resolve_by_api(strlanguage, wcmd.api_titles(converted["links"]))
+                except Exception as err:
+                    # Never a reason to lose the Markdown: the links stay, unresolved by the API.
+                    print(f"Link resolution error for {wikidata_id} ({strlanguage}): {err}")
             except Exception as err:
                 print(f"CONTENT_MD conversion error for {wikidata_id} ({strlanguage}), legacy text kept: {err}")
                 payload["sections"] = [
@@ -501,7 +512,8 @@ def f_writelinksandrefs(payload, wikidata_id, strlanguage, strcontent, lngsectio
     Same pattern as sections and images: an in-place bulk upsert on
     (ID_WIKIDATA, LANG, SECTION_DISPLAY_ORDER, DISPLAY_ORDER), then a prune of the rows this
     crawl no longer produced. Links are resolved to a Qid first: the local title join on
-    T_WC_WIKIPEDIA_PAGE_LANG, then the Wikipedia API for the rest (date and red links aside).
+    T_WC_WIKIPEDIA_PAGE_LANG, then the API answers the fetch worker already got (no network
+    call here; date and red links aside).
     On the legacy fallback (no Markdown) both lists are empty, so the page's old rows go:
     they would describe sections that no longer line up.
     """
@@ -511,7 +523,8 @@ def f_writelinksandrefs(payload, wikidata_id, strlanguage, strcontent, lngsectio
     lnglinkkeys = ["ID_WIKIDATA", "LANG", "SECTION_DISPLAY_ORDER", "DISPLAY_ORDER"]
 
     if arrlinks:
-        wcmd.resolve_link_qids(cp.f_getconnection().cursor(), strlanguage, arrlinks)
+        wcmd.resolve_link_qids(cp.f_getconnection().cursor(), strlanguage, arrlinks,
+                               api_results=payload.get("api_qids") or {})
     arrrows, arrcounts = f_buildlinkrows(arrlinks, wikidata_id, strlanguage, strcontent)
     if arrrows:
         cp.f_sqlbulkupsert("T_WC_WIKIPEDIA_PAGE_LANG_LINK", arrrows, lnglinkkeys, 1)

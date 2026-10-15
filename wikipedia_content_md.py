@@ -516,12 +516,24 @@ def resolve_by_api(lang, titles):
     return out
 
 
-def resolve_link_qids(cursor, lang, links):
+def api_titles(links):
+    """The titles the API is asked about: every live link, red links and date links aside."""
+    return {l["target"] for l in links if not l["redlink"] and not l["is_date"]}
+
+
+def resolve_link_qids(cursor, lang, links, api_results=None):
     """Fill target_qid, final_title, via_redirect, resolved_by on each link, in place.
 
     Red links are not resolved. The local title join comes first (84 % of links on the
-    prototype pages, no network); the API resolves the rest, date links excepted, which
-    only point to calendar pages.
+    prototype pages); the API answer fills the rest, date links excepted, which only point
+    to calendar pages.
+
+    Since 1.1.1 the crawler passes ``api_results``, computed beforehand in the fetch worker
+    for every title of ``api_titles`` (``resolve_by_api``): the main thread then makes no
+    network call, and a title the worker could not resolve stays unresolved. Without it,
+    the API is called here for the titles the join left (1.1.0 behaviour, kept for tests
+    and one-off use). In 1.1.0 that call ran on the main thread, which also does every
+    database write, and cut the crawl from 53 to 38 pages a minute on 2026-10-15.
     """
     for l in links:
         l.update({"target_qid": None, "final_title": None, "via_redirect": 0, "resolved_by": None})
@@ -534,9 +546,12 @@ def resolve_link_qids(cursor, lang, links):
             l.update({"target_qid": qid, "final_title": l["target"], "resolved_by": "title"})
         elif not l["is_date"]:
             rest.add(l["target"])
-    api = resolve_by_api(lang, rest) if rest else {}
+    if api_results is not None:
+        api = api_results
+    else:
+        api = resolve_by_api(lang, rest) if rest else {}
     for l in live:
-        if l["resolved_by"] is None and l["target"] in api:
+        if l["resolved_by"] is None and not l["is_date"] and l["target"] in api:
             qid, final, via = api[l["target"]]
             l.update({"target_qid": qid or None, "final_title": final, "via_redirect": via, "resolved_by": "api"})
     return links

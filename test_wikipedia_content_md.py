@@ -146,6 +146,29 @@ def test_resolution_title_join_then_api(monkeypatch=None):
     assert "3 janvier" not in asked and "Rome" not in asked and "Film inexistant" not in asked
 
 
+def test_resolution_with_worker_api_results():
+    """1.1.1: the worker's API answers are used as given, and the main thread calls nothing."""
+    r = _convert(LEGACY, "fr")
+    titles = wcmd.api_titles(r["links"])
+    assert "Film inexistant" not in titles and "3 janvier" not in titles and "Rome" in titles
+    worker = {t: (f"Q-{t}", t, 0) for t in titles if t != "Réalisateur"}   # "Réalisateur": the worker's call failed
+
+    def no_network(lang, titles):
+        raise AssertionError("the main thread must not call the API")
+
+    saved = wcmd.resolve_by_api
+    wcmd.resolve_by_api = no_network
+    try:
+        wcmd.resolve_link_qids(FakeCursor([("fr", "Rome", "Q220")]), "fr", r["links"], api_results=worker)
+    finally:
+        wcmd.resolve_by_api = saved
+    links = {l["target"]: l for l in r["links"]}
+    assert (links["Rome"]["target_qid"], links["Rome"]["resolved_by"]) == ("Q220", "title")   # the join still comes first
+    assert (links["Technicolor"]["target_qid"], links["Technicolor"]["resolved_by"]) == ("Q-Technicolor", "api")
+    assert links["Réalisateur"]["resolved_by"] is None
+    assert links["3 janvier"]["resolved_by"] is None
+
+
 def test_writer_rows_and_prune():
     import wikipedia_page_writer as wpw
     r = _convert(LEGACY, "fr")
