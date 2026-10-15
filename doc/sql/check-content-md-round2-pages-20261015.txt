@@ -1,0 +1,111 @@
+-- check-content-md-round2-pages.sql
+-- run on vaugouindb (container damp-vaugouin-com-mariadb-1) at 2026-10-15 16:44:32
+--
++------------+------+--------+
+| ITEM_TYPE  | LANG | PAGES  |
++------------+------+--------+
+| award      | en   |     28 |
+| award      | fr   |    214 |
+| collection | en   |      4 |
+| collection | fr   |      5 |
+| episode    | en   |   1551 |
+| episode    | fr   |    202 |
+| group      | en   |     27 |
+| group      | fr   |     43 |
+| item       | en   | 374994 |
+| item       | fr   | 207368 |
+| keyword    | en   |  21155 |
+| keyword    | fr   |  10680 |
+| movie      | en   | 161082 |
+| movie      | fr   |  85807 |
+| nomination | en   |      2 |
+| nomination | fr   |      4 |
+| person     | en   | 171576 |
+| person     | fr   |  99397 |
+| season     | en   |     72 |
+| season     | fr   |     36 |
+| serie      | en   |  35845 |
+| serie      | fr   |  12635 |
+| sourcework | en   |   5277 |
+| sourcework | fr   |   3211 |
+| technical  | en   |     23 |
+| technical  | fr   |     15 |
+| topic      | en   |   1394 |
+| topic      | fr   |     54 |
++------------+------+--------+
++-------------+------+-----------+--------------------------------+---------------------+----------+
+| ID_WIKIDATA | LANG | ITEM_TYPE | WIKIPEDIA_PAGE_TITLE           | LAST_SUCCESS_AT     | SECTIONS |
++-------------+------+-----------+--------------------------------+---------------------+----------+
+| Q102427     | en   | item      | Academy Award for Best Picture | 2026-10-07 18:12:00 |       25 |
+| Q28956556   | en   | item      | Before trilogy                 | 2026-10-11 23:50:24 |       10 |
+| Q728399     | en   | item      | Cinecittà                      | 2026-10-15 06:52:10 |        9 |
+| Q185867     | en   | item      | Film noir                      | 2026-10-09 21:32:01 |       29 |
+| Q1433745    | en   | item      | Hammer Film Productions        | 2026-10-08 22:43:22 |       39 |
+| Q496523     | en   | item      | Heist film                     | 2026-10-13 16:53:24 |        5 |
+| Q192017     | en   | item      | Monument Valley                | 2026-10-09 23:37:22 |       10 |
+| Q179808     | en   | item      | Palme d'Or                     | 2026-10-09 18:23:08 |        9 |
+| Q182950     | en   | item      | Studio Ghibli                  | 2026-10-09 20:19:15 |       16 |
+| Q72594      | en   | item      | Three Colours trilogy          | 2026-10-15 06:27:12 |        8 |
+| Q645595     | fr   | item      | César du meilleur film         | 2026-10-14 17:42:16 |       20 |
+| Q728399     | fr   | item      | Cinecittà                      | 2026-10-15 06:52:10 |        9 |
+| Q185867     | fr   | item      | Film noir                      | 2026-10-09 21:32:02 |       10 |
+| Q209459     | fr   | item      | Lion d'or                      | 2026-10-10 07:37:24 |       10 |
+| Q192017     | fr   | item      | Monument Valley                | 2026-10-09 23:37:22 |       13 |
+| Q1544011    | fr   | item      | Pathé                          | 2026-10-09 03:28:02 |       20 |
+| Q212781     | fr   | item      | Western spaghetti              | 2026-10-10 09:23:19 |       13 |
+| Q478360     | en   | serie     | The Wire                       | 2026-09-29 02:52:20 |       29 |
+| Q2085       | en   | serie     | Twin Peaks                     | 2026-09-29 03:04:06 |       28 |
+| Q1079       | fr   | serie     | Breaking Bad                   | 2026-09-29 02:50:36 |       29 |
+| Q23628      | fr   | serie     | Les Soprano                    | 2026-09-29 02:50:36 |       27 |
++-------------+------+-----------+--------------------------------+---------------------+----------+
++------------+------+-------------+------------------------------------------------------------------------------+----------+
+| ITEM_TYPE  | LANG | ID_WIKIDATA | WIKIPEDIA_PAGE_TITLE                                                         | SECTIONS |
++------------+------+-------------+------------------------------------------------------------------------------+----------+
+| award      | en   | Q122238470  | Harry Jerome Awards                                                          |       15 |
+| award      | en   | Q140385520  | LG Guggenheim Award                                                          |       13 |
+| award      | en   | Q30633735   | Primetime Emmy Award for Outstanding Picture Editing for Variety Programming |       10 |
+| award      | fr   | Q3404925    | Prix Meurice pour l'art contemporain                                         |       29 |
+| award      | fr   | Q109042109  | Prix du roman d'écologie                                                     |       16 |
+| award      | fr   | Q46571202   | Prix Georges-Bizet                                                           |       16 |
+| collection | en   | Q27922181   | Fantastic Beasts                                                             |       20 |
+| collection | en   | Q603433     | Loose Change                                                                 |       20 |
+| collection | en   | Q13476442   | The Naked Gun                                                                |       12 |
+| collection | fr   | Q59783      | Le Décalogue (série de films)                                                |       23 |
+| collection | fr   | Q27922181   | Les Animaux fantastiques (série de films)                                    |       16 |
+| collection | fr   | Q603433     | Loose Change                                                                 |       11 |
+| episode    | en   | Q123497172  | Junior Eurovision Song Contest 2024                                          |       20 |
+| episode    | en   | Q117467409  | Stranger Things season 5                                                     |       19 |
+| episode    | en   | Q27877321   | San Junipero                                                                 |       17 |
+| episode    | fr   | Q130476222  | MTV Europe Music Awards 2024                                                 |       33 |
+| episode    | fr   | Q117467409  | Saison 5 de Stranger Things                                                  |       24 |
+| episode    | fr   | Q2984502    | L'Imposteur (Star Trek)                                                      |       17 |
+| group      | en   | Q364456     | Michel Serres                                                                |       27 |
+| group      | en   | Q98754535   | Noovo                                                                        |       19 |
+| group      | en   | Q185105     | Fernand Braudel                                                              |       18 |
+| group      | fr   | Q364456     | Michel Serres                                                                |       30 |
+| group      | fr   | Q26085276   | France Info (chaîne de télévision)                                           |       21 |
+| group      | fr   | Q185105     | Fernand Braudel                                                              |       20 |
+| keyword    | en   | Q6537571    | Lex Luger production discography                                             |      349 |
+| keyword    | en   | Q2317379    | List of incidents at independent amusement parks                             |      233 |
+| keyword    | en   | Q115519690  | J Dilla production discography                                               |      161 |
+| keyword    | fr   | Q181191     | Castor fiber                                                                 |       62 |
+| keyword    | fr   | Q11261      | Microsoft Word                                                               |       54 |
+| keyword    | fr   | Q190973     | Dassault Rafale                                                              |       52 |
+| season     | en   | Q85807307   | The Great British Bake Off series 10                                         |       20 |
+| season     | en   | Q7359967    | Rokdim Im Kokhavim season 7                                                  |       15 |
+| season     | en   | Q7764384    | The Sing-Off season 3                                                        |       14 |
+| season     | fr   | Q66426722   | Saison 6 de Black-ish                                                        |       28 |
+| season     | fr   | Q69126055   | Saison 8 de Chicago Fire                                                     |       27 |
+| season     | fr   | Q69357392   | Saison 2 de Charmed (2018)                                                   |       26 |
+| sourcework | en   | Q22686      | Donald Trump                                                                 |       55 |
+| sourcework | en   | Q18813      | New Testament                                                                |       51 |
+| sourcework | en   | Q918052     | The Martian Chronicles                                                       |       51 |
+| sourcework | fr   | Q22686      | Donald Trump                                                                 |       61 |
+| sourcework | fr   | Q34316      | Doctor Who                                                                   |       51 |
+| sourcework | fr   | Q8275       | Iliade                                                                       |       49 |
+| topic      | en   | Q2252362    | List of World War II infantry weapons                                        |      405 |
+| topic      | en   | Q3880064    | List of criminal organizations in DC Comics                                  |      317 |
+| topic      | en   | Q6642545    | List of teen dramas                                                          |       54 |
+| topic      | fr   | Q1438930    | GROM                                                                         |       13 |
+| topic      | fr   | Q7409248    | Impératrice douairière                                                       |       12 |
++------------+------+-------------+------------------------------------------------------------------------------+----------+

@@ -8,13 +8,18 @@ writes three things side by side so the formats can be judged on real pages:
 - MD:   a Markdown rendering that keeps links, bold/italic, nested lists, tables,
         and drops footnote call-outs, edit links, navboxes and portal banners;
 - LINKS: one row per internal link (section, anchor, target title), resolved to a
-        Wikidata Qid through the API (redirects followed).
+        Wikidata Qid through the API (redirects followed);
+- REPAIRED: the plain text derived from MD (round 2, decision 2 of 2026-10-15): tables kept
+        as plain rows, footnote call-outs gone, nested lists written once, "- " bullets kept
+        so the Fiche technique "- Format" extraction still finds its line;
+- REFS: one row per footnote cited in a section (round 2, decision 4): URL and title, the
+        provenance kept out of the Markdown.
 
 Usage:
     python prototype_content_md.py OUTDIR "en:Dollars Trilogy" "fr:Trilogie du dollar" ...
 
-Writes OUTDIR/<lang>-<slug>.md (sections), OUTDIR/<lang>-<slug>-links.csv,
-OUTDIR/<lang>-<slug>.html (raw parse HTML) and OUTDIR/summary.json (sizes, counts).
+Writes OUTDIR/<lang>-<slug>.md (sections), -text.md (today), -repaired.md, -links.csv,
+-refs.csv, .html (raw parse HTML) and OUTDIR/summary.json (sizes, counts).
 """
 
 import csv
@@ -38,7 +43,7 @@ DROP_CLASSES = {
     "mw-editsection", "reference", "navbox", "navbox-styles", "navbox-container",
     "vertical-navbox", "sistersitebox", "metadata", "noprint", "mw-empty-elt",
     "bandeau-portail", "portal-bar", "catlinks", "mw-references-wrap",
-    "printfooter", "authority-control", "bandeau-container", "homonymie",
+    "printfooter", "authority-control", "bandeau-container", "homonymie", "mw-references",
     "plainlinks", "mw-authority-control", "navigation-not-searchable",
 }
 DROP_TAGS = {"style", "script", "link", "meta", "figure", "img", "audio", "video"}
@@ -66,11 +71,19 @@ def _is_dropped(tag):
 
 
 def _wiki_target(href):
-    """Return (title, fragment) for an internal article link, else None."""
-    if not href or not href.startswith("/wiki/"):
+    """Return (title, fragment) for an internal article link, else None.
+
+    Accepts the legacy form ("/wiki/Title") and the Parsoid one that action=parse returns
+    since 2026-10-15 ("https://<lang>.wikipedia.org/wiki/Title", or "./Title").
+    """
+    href = re.sub(r"^https?://[a-z-]+\.wikipedia\.org(?=/wiki/)", "", href or "")
+    if href.startswith("./"):
+        href = "/wiki/" + href[2:]
+    if not href.startswith("/wiki/"):
         return None
     path = href[len("/wiki/"):]
     path, _, fragment = path.partition("#")
+    path = path.split("?", 1)[0]          # "?action=edit&redlink=1"; a real "?" in a title is %3F
     title = urllib.parse.unquote(path).replace("_", " ")
     # Namespaced pages (File:, Help:, Category:, Portail:, Fichier:...) are not entities.
     if re.match(r"^[^ :]+:", title) and not title.startswith(":"):
@@ -83,12 +96,21 @@ class MarkdownRenderer:
 
     def __init__(self):
         self.links = []          # dicts: anchor, target, fragment, redlink
+        self.refs = []           # dicts: section, note (cite_note id), label
         self.section = None
 
     # -- inline --------------------------------------------------------------
     def inline(self, node):
         if isinstance(node, NavigableString):
             return re.sub(r"\s+", " ", str(node))
+        if isinstance(node, Tag) and node.name == "sup" and "reference" in _classes(node):
+            # Footnote call-out: out of the text, into the reference table.
+            a = node.find("a", href=True)
+            if a and a["href"].startswith("#"):
+                note = a["href"][1:]
+                if not any(r["section"] == self.section and r["note"] == note for r in self.refs):
+                    self.refs.append({"section": self.section, "note": note, "label": node.get_text(strip=True)})
+            return ""
         if not isinstance(node, Tag) or _is_dropped(node):
             return ""
         inner = "".join(self.inline(c) for c in node.children)
@@ -111,7 +133,8 @@ class MarkdownRenderer:
             if "new" in _classes(node) or "redlink=1" in href:
                 # Red link: no article yet. Kept in the link table, plain in the text.
                 m = re.search(r"title=([^&]+)", href)
-                target = urllib.parse.unquote(m.group(1)).replace("_", " ") if m else text
+                t2 = _wiki_target(href)
+                target = urllib.parse.unquote(m.group(1)).replace("_", " ") if m else (t2[0] if t2 else text)
                 self.links.append({"section": self.section, "anchor": text, "target": target, "fragment": "", "redlink": 1})
                 return text
             target = _wiki_target(href)
@@ -265,7 +288,15 @@ def split_sections_md(soup):
         if md:
             sections.append((title, md))
 
-    for node in root.children:
+    def top_blocks(parent):
+        # Parsoid (action=parse since 2026-10-15) wraps each section in <section>: walk through them.
+        for c in parent.children:
+            if isinstance(c, Tag) and c.name == "section":
+                yield from top_blocks(c)
+            else:
+                yield c
+
+    for node in top_blocks(root):
         heading = None
         if isinstance(node, Tag):
             if node.name in ("h2", "h3"):
@@ -290,7 +321,57 @@ def split_sections_md(soup):
             continue
         lines += renderer.block(node)
     flush()
-    return sections, renderer.links
+    return sections, renderer.links, renderer.refs
+
+
+def collect_references(soup):
+    """Map each footnote id (cite_note-...) to its URL, title and full text."""
+    out = {}
+    for li in soup.select('li[id^="cite_note"]'):
+        body = li.find(class_="reference-text") or li
+        ext = body.find("a", class_="external", href=True)
+        url = ext["href"] if ext else ""
+        if url.startswith("//"):
+            url = "https:" + url
+        cite = body.find("cite")
+        title = (ext.get_text(" ", strip=True) if ext else "") or (cite.get_text(" ", strip=True) if cite else "")
+        out[li["id"]] = {"url": url, "title": re.sub(r"\s+", " ", title).strip(),
+                         "text": re.sub(r"\s+", " ", body.get_text(" ", strip=True))}
+    return out
+
+
+def md_to_text(md):
+    """Plain text from the Markdown: links to their words, emphasis gone, tables as plain rows."""
+    out = []
+    for line in md.split("\n"):
+        if re.match(r"^\|(-+\|)+$", line):
+            continue                                   # table separator
+        if line.strip() == "**Infobox**":
+            continue
+        # [words](target) -> words; a target may hold balanced parentheses: Richard_Harrison_(acteur)
+        line = re.sub(r"\[([^\]]+)\]\((?:[^()\s]|\([^()\s]*\))*\)", r"\1", line)
+        if line.startswith("| ") and line.endswith(" |"):
+            cells = [c.strip().replace("\\|", "|") for c in re.split(r"(?<!\\)\|", line[1:-1])]
+            line = " | ".join(cells)
+        line = line.replace("**", "")
+        line = re.sub(r"(?<![\w*])\*(\S[^*]*?)\*(?![\w*])", r"\1", line)
+        line = re.sub(r"^#{3,6} ", "", line)
+        line = re.sub(r"^> ", "", line)
+        out.append(line)
+    return re.sub(r"\n{3,}", "\n\n", "\n".join(out)).strip()
+
+
+def format_line(content):
+    """The writer's Fiche technique extraction (wikipedia_page_writer.py), to check it still works."""
+    i = content.find("\n- Format")
+    if i == -1:
+        i = content.find("- Format")
+        if i == -1:
+            return ""
+    else:
+        i += 1
+    j = content.find("\n- ", i + 2)
+    return content[i:j if j != -1 else len(content)].strip()
 
 
 def fetch_parse_html(lang, title):
@@ -339,7 +420,11 @@ def main():
         soup = BeautifulSoup("<body>" + html + "</body>", "html.parser")
         text_sections = extract_titles_and_text(soup=BeautifulSoup("<body>" + html + "</body>", "html.parser"))
         text_sections = [(t, c.replace("[edit]", "")) for t, c in text_sections]
-        md_sections, links = split_sections_md(soup)
+        refnotes = collect_references(BeautifulSoup("<body>" + html + "</body>", "html.parser"))
+        md_sections, links, refs = split_sections_md(soup)
+        repaired = [(t, md_to_text(m)) for t, m in md_sections]
+        for r in refs:
+            r.update(refnotes.get(r["note"], {"url": "", "title": "", "text": ""}))
         qids = resolve_qids(lang, [l["target"] for l in links if not l["redlink"]])
         for l in links:
             qid, final, via = qids.get(l["target"], ("", l["target"], 0))
@@ -356,6 +441,14 @@ def main():
             f.write(f"# {title} ({lang}), today's CONTENT\n\n")
             for i, (t, c) in enumerate(text_sections):
                 f.write(f"## [{i}] {t}\n\n```text\n{c}\n```\n\n")
+        with open(outdir / f"{base}-repaired.md", "w", encoding="utf-8") as f:
+            f.write(f"# {title} ({lang}), repaired CONTENT\n\n")
+            for i, (t, c) in enumerate(repaired):
+                f.write(f"## [{i}] {t}\n\n```text\n{c}\n```\n\n")
+        with open(outdir / f"{base}-refs.csv", "w", encoding="utf-8", newline="") as f:
+            w = csv.DictWriter(f, fieldnames=["section", "note", "label", "url", "title", "text"])
+            w.writeheader()
+            w.writerows(refs)
         with open(outdir / f"{base}-links.csv", "w", encoding="utf-8", newline="") as f:
             w = csv.DictWriter(f, fieldnames=["section", "anchor", "target", "fragment", "redlink", "final_title", "via_redirect", "qid"])
             w.writeheader()
@@ -379,6 +472,13 @@ def main():
             "links_via_redirect": sum(1 for l in links if l.get("via_redirect")),
             "distinct_qids": len({l["qid"] for l in links if l.get("qid")}),
             "md_tables": sum(m.count("\n|---") for _, m in md_sections),
+            "chars_repaired": sum(len(c) for _, c in repaired),
+            "refs_cited": len(refs),
+            "refs_distinct": len({r["note"] for r in refs}),
+            "refs_with_url": len({r["note"] for r in refs if r["url"]}),
+            "refs_unresolved": len({r["note"] for r in refs if r["note"] not in refnotes}),
+            "format_today": next((format_line(c) for t, c in text_sections if t == "Fiche technique"), None),
+            "format_repaired": next((format_line(c) for t, c in repaired if t == "Fiche technique"), None),
         })
         print(json.dumps(summary[-1], ensure_ascii=False))
     (outdir / "summary.json").write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
