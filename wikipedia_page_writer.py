@@ -28,6 +28,7 @@ import requests
 from bs4 import BeautifulSoup
 
 import citizenphil as cp
+import wikipedia_content_md as wcmd
 import wikipedia_images as wimg
 from wikipedia_crawler_helpers import extract_titles_and_text
 from wikipedia_http import rate_limit
@@ -92,7 +93,10 @@ def f_fetchlangpayload(session, wikidata_id, page_title, strkey, strlanguage, ne
         "http_status": None,
         "success": False,
         "has_content": False,
+        # (display_order, title, CONTENT, CONTENT_MD); CONTENT_MD is None on the legacy fallback.
         "sections": [],
+        "links": [],
+        "refs": [],
     }
 
     # Lead/main image — only for content types that store one.
@@ -179,7 +183,21 @@ def f_fetchlangpayload(session, wikidata_id, page_title, strkey, strlanguage, ne
             payload["has_content"] = True
             wikipedia_page_content = "<body>" + wikipedia_page_content + "</body>"
             soup = BeautifulSoup(wikipedia_page_content, 'html.parser')
-            payload["sections"] = extract_titles_and_text(soup=soup)
+            # 1.1.0 (topic wikipedia-rich-sections): CONTENT is the plain text repaired from
+            # the Markdown, CONTENT_MD the Markdown, plus the page's links and references.
+            # Should the converter ever fail on a page, the page keeps the legacy plain-text
+            # extraction, with no Markdown, links or references, rather than losing its sections.
+            try:
+                converted = wcmd.convert_page(soup, strlanguage)
+                payload["sections"] = converted["sections"]
+                payload["links"] = converted["links"]
+                payload["refs"] = converted["refs"]
+            except Exception as err:
+                print(f"CONTENT_MD conversion error for {wikidata_id} ({strlanguage}), legacy text kept: {err}")
+                payload["sections"] = [
+                    (i, t, c.replace("[edit]", ""), None)
+                    for i, (t, c) in enumerate(extract_titles_and_text(soup=soup), start=1)
+                ]
 
     # All page images. The image list comes from the query API; captions reuse the
     # soup above when available, otherwise fall back to the function's own fetch.
@@ -354,12 +372,10 @@ def f_writelangtodb(payload, lngid, wikidata_id, strlanguage, strcontent, intind
         # (creation fields are insert-only -- see citizenphil module docs).
         arrsectionrows = []
         lngdisplayorder = 0
-        for i, (strsectiontitle, strsectioncontent) in enumerate(arrcontent):
-            print(f"{i}. Title: {strsectiontitle}")
-            strsectioncontent = strsectioncontent.replace("[edit]","")
+        for lngdisplayorder, strsectiontitle, strsectioncontent, strsectionmd in arrcontent:
+            print(f"{lngdisplayorder}. Title: {strsectiontitle}")
             if len(strsectiontitle) > 300:
                 strsectiontitle = strsectiontitle[:300]
-            lngdisplayorder += 1
             arrsectionrows.append({
                 "ID_WIKIDATA": wikidata_id,
                 "LANG": strlanguage,
@@ -367,6 +383,7 @@ def f_writelangtodb(payload, lngid, wikidata_id, strlanguage, strcontent, intind
                 "DISPLAY_ORDER": lngdisplayorder,
                 "TITLE": strsectiontitle,
                 "CONTENT": strsectioncontent,
+                "CONTENT_MD": strsectionmd,
             })
 
             # Extract Format data from movie, fr, Fiche Technique section
@@ -403,7 +420,9 @@ def f_writelangtodb(payload, lngid, wikidata_id, strlanguage, strcontent, intind
                         cp.f_sqlupdatearray(strsqltablename,arrcouples,strsqlupdatecondition,1)
 
         if arrsectionrows:
-            cp.f_sqlbulkupsert("T_WC_WIKIPEDIA_PAGE_LANG_SECTION", arrsectionrows, ["ID_WIKIDATA", "LANG", "DISPLAY_ORDER"], 1)
+            # 100 rows per statement: with CONTENT_MD beside CONTENT a row is about 2.4 times
+            # what it was, and a statement must stay under max_allowed_packet.
+            cp.f_sqlbulkupsert("T_WC_WIKIPEDIA_PAGE_LANG_SECTION", arrsectionrows, ["ID_WIKIDATA", "LANG", "DISPLAY_ORDER"], 1, intchunksize=100)
             cursor2.execute(
                 f"DELETE FROM T_WC_WIKIPEDIA_PAGE_LANG_SECTION WHERE ID_WIKIDATA = '{wikidata_id}' AND LANG = '{strlanguage}' AND DISPLAY_ORDER > {lngdisplayorder}"
             )
@@ -413,4 +432,97 @@ def f_writelangtodb(payload, lngid, wikidata_id, strlanguage, strcontent, intind
             )
         cp.connectioncp.commit()
 
+        try:
+            f_writelinksandrefs(payload, wikidata_id, strlanguage, strcontent, lngdisplayorder, cursor2)
+        except Exception as err:
+            print(f"Links/references persistence error for {wikidata_id} ({strlanguage}): {err}")
+
     return lngencount, lngfrcount
+
+
+def _prunecondition(lngsectioncount, arrcounts):
+    """WHERE clause tail matching the rows of a page this crawl no longer produced:
+    sections past the last one, and in each section the rows past its last link/reference."""
+    arrconds = [f"SECTION_DISPLAY_ORDER > {int(lngsectioncount)}"]
+    for lngsection in range(1, int(lngsectioncount) + 1):
+        arrconds.append(f"(SECTION_DISPLAY_ORDER = {lngsection} AND DISPLAY_ORDER > {int(arrcounts.get(lngsection, 0))})")
+    return "(" + " OR ".join(arrconds) + ")"
+
+
+def f_buildlinkrows(arrlinks, wikidata_id, strlanguage, strcontent):
+    """Rows for T_WC_WIKIPEDIA_PAGE_LANG_LINK from resolved links, plus the per-section counts."""
+    arrrows = []
+    arrcounts = {}
+    for link in arrlinks:
+        arrcounts[link["section"]] = max(arrcounts.get(link["section"], 0), link["display_order"])
+        arrrows.append({
+            "ID_WIKIDATA": wikidata_id,
+            "LANG": strlanguage,
+            "ITEM_TYPE": strcontent,
+            "SECTION_DISPLAY_ORDER": link["section"],
+            "DISPLAY_ORDER": link["display_order"],
+            "ANCHOR": link["anchor"][:wcmd.MAX_ANCHOR],
+            "TARGET_TITLE": link["target"][:wcmd.MAX_TITLE],
+            "FRAGMENT": link["fragment"][:wcmd.MAX_TITLE] if link["fragment"] else None,
+            "TARGET_FINAL_TITLE": link["final_title"][:wcmd.MAX_TITLE] if link["final_title"] else None,
+            "VIA_REDIRECT": link["via_redirect"],
+            "IS_REDLINK": link["redlink"],
+            "IS_DATE": link["is_date"],
+            "TARGET_ID_WIKIDATA": link["target_qid"],
+            "RESOLVED_BY": link["resolved_by"],
+        })
+    return arrrows, arrcounts
+
+
+def f_buildrefrows(arrrefs, wikidata_id, strlanguage, strcontent):
+    """Rows for T_WC_WIKIPEDIA_PAGE_LANG_REFERENCE, plus the per-section counts."""
+    arrrows = []
+    arrcounts = {}
+    for ref in arrrefs:
+        arrcounts[ref["section"]] = max(arrcounts.get(ref["section"], 0), ref["display_order"])
+        arrrows.append({
+            "ID_WIKIDATA": wikidata_id,
+            "LANG": strlanguage,
+            "ITEM_TYPE": strcontent,
+            "SECTION_DISPLAY_ORDER": ref["section"],
+            "DISPLAY_ORDER": ref["display_order"],
+            "NOTE_KEY": ref["note"][:wcmd.MAX_NOTE_KEY],
+            "LABEL": ref["label"][:wcmd.MAX_LABEL],
+            "URL": ref["url"] or None,
+            "TITLE": ref["title"][:wcmd.MAX_REF_TITLE] if ref["title"] else None,
+            "REFERENCE_TEXT": ref["text"] or None,
+        })
+    return arrrows, arrcounts
+
+
+def f_writelinksandrefs(payload, wikidata_id, strlanguage, strcontent, lngsectioncount, cursor2):
+    """Persist the links and references of one page (1.1.0), keyed like its sections.
+
+    Same pattern as sections and images: an in-place bulk upsert on
+    (ID_WIKIDATA, LANG, SECTION_DISPLAY_ORDER, DISPLAY_ORDER), then a prune of the rows this
+    crawl no longer produced. Links are resolved to a Qid first: the local title join on
+    T_WC_WIKIPEDIA_PAGE_LANG, then the Wikipedia API for the rest (date and red links aside).
+    On the legacy fallback (no Markdown) both lists are empty, so the page's old rows go:
+    they would describe sections that no longer line up.
+    """
+    arrlinks = payload.get("links") or []
+    arrrefs = payload.get("refs") or []
+    strwhere = f"ID_WIKIDATA = '{wikidata_id}' AND LANG = '{strlanguage}'"
+    lnglinkkeys = ["ID_WIKIDATA", "LANG", "SECTION_DISPLAY_ORDER", "DISPLAY_ORDER"]
+
+    if arrlinks:
+        wcmd.resolve_link_qids(cp.f_getconnection().cursor(), strlanguage, arrlinks)
+    arrrows, arrcounts = f_buildlinkrows(arrlinks, wikidata_id, strlanguage, strcontent)
+    if arrrows:
+        cp.f_sqlbulkupsert("T_WC_WIKIPEDIA_PAGE_LANG_LINK", arrrows, lnglinkkeys, 1)
+        cursor2.execute(f"DELETE FROM T_WC_WIKIPEDIA_PAGE_LANG_LINK WHERE {strwhere} AND {_prunecondition(lngsectioncount, arrcounts)}")
+    else:
+        cursor2.execute(f"DELETE FROM T_WC_WIKIPEDIA_PAGE_LANG_LINK WHERE {strwhere}")
+
+    arrrows, arrcounts = f_buildrefrows(arrrefs, wikidata_id, strlanguage, strcontent)
+    if arrrows:
+        cp.f_sqlbulkupsert("T_WC_WIKIPEDIA_PAGE_LANG_REFERENCE", arrrows, lnglinkkeys, 1)
+        cursor2.execute(f"DELETE FROM T_WC_WIKIPEDIA_PAGE_LANG_REFERENCE WHERE {strwhere} AND {_prunecondition(lngsectioncount, arrcounts)}")
+    else:
+        cursor2.execute(f"DELETE FROM T_WC_WIKIPEDIA_PAGE_LANG_REFERENCE WHERE {strwhere}")
+    cp.connectioncp.commit()

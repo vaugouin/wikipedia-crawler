@@ -81,8 +81,8 @@ For each content type, it:
 2. Resolves the Wikipedia page title for each target language (`en` and `fr`) using the Wikidata API.
 3. Retrieves the main image URL from Wikipedia when an image destination table/column is configured for that content type.
 4. Downloads parsed Wikipedia page HTML through the MediaWiki `parse` API.
-5. Extracts the page into structured sections using `extract_titles_and_text()`.
-6. Stores those sections in `T_WC_WIKIPEDIA_PAGE_LANG_SECTION`.
+5. Converts the page with `wikipedia_content_md.convert_page()`: each section as Markdown (`CONTENT_MD`) and as plain text repaired from it (`CONTENT`), plus the page's internal links and footnotes.
+6. Stores the sections in `T_WC_WIKIPEDIA_PAGE_LANG_SECTION`, the links (resolved to a Qid) in `T_WC_WIKIPEDIA_PAGE_LANG_LINK` and the footnotes in `T_WC_WIKIPEDIA_PAGE_LANG_REFERENCE`.
 7. Performs some content-specific enrichment, such as extracting the French movie `Format` line from the `Fiche technique` section.
 8. Updates server variables so the execution state can be monitored and resumed.
 
@@ -106,6 +106,15 @@ Contains extracted helper functions used by the crawler:
 - `get_linked_pages()`
 - `extract_titles_and_text()`
 
+### `wikipedia_content_md.py`
+Since 1.1.0 (topic `wikipedia-rich-sections` in the Nestor t2s-backlog, decisions of 2026-10-15). Turns the `action=parse` HTML into sections, links and references, network-free and database-free except its two resolvers:
+
+- `convert_page(soup, lang)`: the same H2/H3 split as `extract_titles_and_text()` (WIKIPEDIA-CRAWLER-016), walking top-level blocks only. For each section: the Markdown (links by Wikipedia title, `[words](Target_title)`; bold, italic, nested lists, tables, definition lists kept; footnote call-outs, edit links, navboxes, galleries and portal banners dropped) and the plain text derived from it by `md_to_text()` (tables as plain rows, `[1]` call-outs gone, nested lists written once, `- ` bullets kept for the Fiche technique Format line). Reads both HTML shapes: the legacy parser output and Parsoid's (`<section>` wrappers, `./Title` links), which `action=parse` served on 2026-10-15 from 10:00 to 19:00 Paris. A section that renders empty is dropped (an end-matter "Références" holding only the reference list, for instance: its footnotes now live in the reference table).
+- Date links: French Wikipedia links every date part (`[20](20_octobre) [octobre](Octobre_2009) [2009](2009_à_la_télévision)`, 5 % of all links on the prototype pages, 45 % on a season page). They are kept and flagged `IS_DATE`: inside the `{{date}}` template's `.date-lien`, or a calendar title (`20 octobre`, `Octobre 2009`, `2009`, `1966 au cinéma`; four-digit years only, so `Mai 68` stays an event).
+- `resolve_link_qids(cursor, lang, links)`: runs on the main thread. First a local title join on `T_WC_WIKIPEDIA_PAGE_LANG` (index `LANG_WIKIPEDIA_PAGE_TITLE`), filtered in Python on the exact title because the column's collation ignores case and accents, a title held by two Qids being left to the API. Then `action=query&prop=pageprops` for the rest, 50 titles per call, redirects followed, results cached in memory. Red links are never resolved, date links only by the title join.
+
+If the converter ever raises on a page, the writer falls back to `extract_titles_and_text()` for that page, with `CONTENT_MD` NULL and no links or references.
+
 ### `wikipedia_images.py`
 Wikipedia image retrieval helpers:
 
@@ -124,7 +133,8 @@ Wikipedia image retrieval helpers:
 Shared per-entity fetch + persist pipeline used by both the full crawler and the on-demand entry points:
 
 - `f_fetchlangpayload(...)` — network + HTML parsing for one `(entity, language)` page (thread-safe, no DB work).
-- `f_writelangtodb(...)` — persists one payload (page metadata, images, sections, main-image and movie-Format writebacks). Its `blnwritecounters` flag lets the single-Qid path skip monitoring-counter writes.
+- `f_writelangtodb(...)`: persists one payload (page metadata, images, sections with `CONTENT` and `CONTENT_MD`, links, references, main-image and movie-Format writebacks). Its `blnwritecounters` flag lets the single-Qid path skip monitoring-counter writes.
+- `f_writelinksandrefs(...)`: the link and reference rows of one page, keyed like its sections: upsert on `(ID_WIKIDATA, LANG, SECTION_DISPLAY_ORDER, DISPLAY_ORDER)`, then a prune of the rows this crawl no longer produced. A failure there is logged and never costs the page its sections.
 - `CONTENT_CONFIG` — per-content `id` / `imagetable` / `imagecolumn` / source-table mapping mirroring `arrprocesses` in `wikipedia_crawler.py`.
 
 Living here (rather than in `wikipedia_crawler.py`, whose body runs a full crawl at import time) lets `wikipedia_functions.py` reuse this logic without launching a crawl.
@@ -155,9 +165,10 @@ For each selected row:
 7. It then calls the Wikipedia `parse` API to get rendered HTML.
 8. It updates `T_WC_WIKIPEDIA_PAGE_LANG` with page crawl status such as the last crawl timestamp, HTTP status, and last successful crawl timestamp.
 9. The HTML is normalized by wrapping it in a `<body>` tag.
-10. `extract_titles_and_text()` converts the page into `(title, content)` pairs.
+10. `wikipedia_content_md.convert_page()` converts the page into `(display_order, title, content, content_md)` sections, links and references.
 11. Each section is inserted or updated in `T_WC_WIKIPEDIA_PAGE_LANG_SECTION`.
 12. Any old sections beyond the latest `DISPLAY_ORDER` are deleted for that Wikidata ID and language.
+13. The links are resolved to a Qid (local title join, then the API), and links and references are upserted into `T_WC_WIKIPEDIA_PAGE_LANG_LINK` and `T_WC_WIKIPEDIA_PAGE_LANG_REFERENCE`, stale rows pruned.
 
 ## Content types and image destinations
 
@@ -243,7 +254,15 @@ Fields written include:
 - `ITEM_TYPE`
 - `DISPLAY_ORDER`
 - `TITLE`
-- `CONTENT`
+- `CONTENT` (since 1.1.0 the plain text repaired from the Markdown)
+- `CONTENT_MD` (since 1.1.0; NULL on rows not yet re-crawled, and on a page where the converter failed)
+
+Both text columns are `COMPRESSED` (zlib, about 2.3 times on this text). Since 1.1.0, two tables are keyed like the sections, `(ID_WIKIDATA, LANG, SECTION_DISPLAY_ORDER, DISPLAY_ORDER)`:
+
+- `T_WC_WIKIPEDIA_PAGE_LANG_LINK`: one row per internal link: `ANCHOR`, `TARGET_TITLE`, `FRAGMENT`, `TARGET_FINAL_TITLE` (after redirect), `VIA_REDIRECT`, `IS_REDLINK`, `IS_DATE`, `TARGET_ID_WIKIDATA` and `RESOLVED_BY` (`title` for the local join, `api`, NULL when unresolved).
+- `T_WC_WIKIPEDIA_PAGE_LANG_REFERENCE`: one row per footnote cited in a section: `NOTE_KEY` (`cite_note-...`), `LABEL` (`[12]`), `URL`, `TITLE`, `REFERENCE_TEXT` (compressed). 43 % of references have no URL.
+
+The backfill is tracked by the `wikipedia-content-md-backfill` report of `data-monitoring`.
 
 ### Image URL enrichment
 When configured, the main image URL is written back to a content-specific Wikidata table.
@@ -687,6 +706,12 @@ python test_wikipedia_page_images.py Q24815 --item-type movie
 ```
 
 The script prints each image as it is written and finishes with a `SELECT COUNT(*) ... GROUP BY LANG` summary so you can verify rows landed.
+
+`test_wikipedia_content_md.py` runs offline (no network, no database): sections, Markdown, repaired text, date and red links, references, the title-join-then-API resolution and the writer's link/reference rows, on small pages in both HTML shapes.
+
+```bash
+python test_wikipedia_content_md.py
+```
 
 ## Typical execution result
 
