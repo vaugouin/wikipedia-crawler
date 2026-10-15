@@ -74,7 +74,7 @@ def _wiki_target(href):
     """Return (title, fragment) for an internal article link, else None.
 
     Accepts the legacy form ("/wiki/Title") and the Parsoid one that action=parse returns
-    since 2026-10-15 ("https://<lang>.wikipedia.org/wiki/Title", or "./Title").
+    for nine hours on 2026-10-15, and may again ("https://<lang>.wikipedia.org/wiki/Title", or "./Title").
     """
     href = re.sub(r"^https?://[a-z-]+\.wikipedia\.org(?=/wiki/)", "", href or "")
     if href.startswith("./"):
@@ -289,7 +289,7 @@ def split_sections_md(soup):
             sections.append((title, md))
 
     def top_blocks(parent):
-        # Parsoid (action=parse since 2026-10-15) wraps each section in <section>: walk through them.
+        # Parsoid HTML (served by action=parse on 2026-10-15, 10:00 to 19:00 Paris) wraps each section in <section>: walk through them.
         for c in parent.children:
             if isinstance(c, Tag) and c.name == "section":
                 yield from top_blocks(c)

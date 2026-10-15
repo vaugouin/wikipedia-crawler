@@ -157,7 +157,8 @@ def _append_block_text(section_text, sibling):
         if text:
             # A paragraph ends with "\n " (blank line before the next block). The legacy parser
             # HTML put a "\n" before </p> and the blank line came from it; Parsoid HTML, which
-            # action=parse returns since 2026-10-15, has none, so the ending is made explicit.
+            # action=parse served on 2026-10-15 from 10:00 to 19:00 Paris, has none, so the
+            # ending is made explicit and no longer depends on the HTML shape.
             section_text += '\n' + text.rstrip('\n') + "\n "
     elif name == 'h3' or name == 'h4':
         text = sibling.get_text()
