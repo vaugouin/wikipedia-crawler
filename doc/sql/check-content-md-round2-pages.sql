@@ -12,3 +12,16 @@ WHERE (p.LANG = 'en' AND p.WIKIPEDIA_PAGE_TITLE IN ('Twin Peaks', 'The Wire', 'A
          'Lion d''or', 'Monument Valley', 'Cinecittà', 'Western spaghetti', 'Film noir', 'Gaumont (entreprise)',
          'Pathé', 'Trilogie Trois Couleurs', 'Trois Couleurs', 'Trilogie Before'))
 ORDER BY p.ITEM_TYPE, p.LANG, p.WIKIPEDIA_PAGE_TITLE;
+
+-- The richest page of each crawl family that the candidates above do not cover.
+SELECT x.ITEM_TYPE, x.LANG, x.ID_WIKIDATA, p.WIKIPEDIA_PAGE_TITLE, x.SECTIONS
+FROM (
+  SELECT s.ITEM_TYPE, s.LANG, s.ID_WIKIDATA, COUNT(*) AS SECTIONS,
+    ROW_NUMBER() OVER (PARTITION BY s.ITEM_TYPE, s.LANG ORDER BY COUNT(*) DESC, s.ID_WIKIDATA) AS RN
+  FROM T_WC_WIKIPEDIA_PAGE_LANG_SECTION s
+  WHERE s.ITEM_TYPE IN ('award', 'collection', 'episode', 'season', 'keyword', 'sourcework', 'topic', 'group')
+  GROUP BY s.ITEM_TYPE, s.LANG, s.ID_WIKIDATA
+) x
+JOIN T_WC_WIKIPEDIA_PAGE_LANG p ON p.ID_WIKIDATA = x.ID_WIKIDATA AND p.LANG = x.LANG
+WHERE x.RN <= 3
+ORDER BY x.ITEM_TYPE, x.LANG, x.RN;
