@@ -1,0 +1,25 @@
+-- check-content-md-round2-links.sql
+-- run on vaugouindb (container damp-vaugouin-com-mariadb-1) at 2026-10-15 16:54:01
+--
++-----------------------------------+-------+---------------+---------------+-------------------------------+-----------------------+
+| PAGE                              | LINKS | DISTINCT_QIDS | QIDS_WE_CRAWL | LINKS_RESOLVED_BY_LOCAL_TITLE | LOCAL_TITLE_WRONG_QID |
++-----------------------------------+-------+---------------+---------------+-------------------------------+-----------------------+
+| en-academy-award-for-best-picture |  2471 |          1586 |          1470 |                          2339 |                     5 |
+| en-film-noir                      |   967 |           683 |           645 |                           777 |                    12 |
+| en-hammer-film-productions        |   579 |           392 |           370 |                           517 |                     9 |
+| en-list-of-teen-dramas            |  2121 |          1883 |          1642 |                          1720 |                    28 |
+| en-monument-valley                |    80 |            69 |            30 |                            32 |                     0 |
+| en-san-junipero                   |   223 |           140 |           116 |                           174 |                     3 |
+| en-three-colours-trilogy          |    97 |            65 |            59 |                            78 |                     0 |
+| en-twin-peaks                     |   546 |           363 |           311 |                           442 |                    18 |
+| fr-breaking-bad                   |   434 |           288 |           238 |                           333 |                     8 |
+| fr-c-sar-du-meilleur-film         |  1452 |           863 |           773 |                          1356 |                     2 |
+| fr-cinecitt                       |   117 |            96 |            80 |                            92 |                     1 |
+| fr-iliade                         |   989 |           399 |           206 |                           678 |                    14 |
+| fr-le-bon-la-brute-et-le-truand   |   405 |           296 |           240 |                           335 |                     3 |
+| fr-le-d-calogue-s-rie-de-films    |   193 |           120 |           100 |                           168 |                     0 |
+| fr-path                           |   318 |           239 |           187 |                           240 |                     6 |
+| fr-saison-8-de-chicago-fire       |   519 |           138 |           126 |                           384 |                     0 |
+| fr-western-spaghetti              |   570 |           384 |           344 |                           523 |                     4 |
+| NULL                              | 12081 |          7414 |          6436 |                         10188 |                   113 |
++-----------------------------------+-------+---------------+---------------+-------------------------------+-----------------------+
