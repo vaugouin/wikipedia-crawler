@@ -26,6 +26,11 @@ JOIN T_WC_WIKIPEDIA_PAGE_LANG_SECTION s
 
 -- 2. The change: same type, charset, collation and default, plus COMPRESSED.
 --    LOCK=SHARED keeps the table readable (API, front) during the copy; writes wait.
+--    The ALTER needs an exclusive metadata lock twice, briefly, at the start and at the final swap.
+--    While it waits for one, every new reader queues behind it: the API and the front freeze.
+--    The default wait is a day; 120 s caps the freeze, and the ALTER fails (rerun later) instead of
+--    hanging behind a long query or a backup (mariadb-dump --single-transaction holds the lock).
+SET SESSION lock_wait_timeout = 120;
 ALTER TABLE T_WC_WIKIPEDIA_PAGE_LANG_SECTION
   MODIFY CONTENT mediumtext COMPRESSED CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   ALGORITHM=COPY, LOCK=SHARED;
