@@ -259,7 +259,7 @@ Fields written include:
 
 Both text columns are `COMPRESSED` (zlib, about 2.3 times on this text). Since 1.1.0, two tables are keyed like the sections, `(ID_WIKIDATA, LANG, SECTION_DISPLAY_ORDER, DISPLAY_ORDER)`:
 
-- `T_WC_WIKIPEDIA_PAGE_LANG_LINK`: one row per internal link: `ANCHOR`, `TARGET_TITLE`, `FRAGMENT`, `TARGET_FINAL_TITLE` (after redirect), `VIA_REDIRECT`, `IS_REDLINK`, `IS_DATE`, `TARGET_ID_WIKIDATA` and `RESOLVED_BY` (`title` for the local join, `api`, NULL when unresolved).
+- `T_WC_WIKIPEDIA_PAGE_LANG_LINK`: one row per internal link: `ANCHOR`, `TARGET_TITLE`, `FRAGMENT`, `TARGET_FINAL_TITLE` (after redirect), `VIA_REDIRECT`, `IS_REDLINK`, `IS_DATE`, `TARGET_ID_WIKIDATA` and `RESOLVED_BY` (`title` for the local join, `api`, NULL when unresolved). Read backwards by tmdb-front and fastapi-text2sql ("mentioned in": which pages link to an entity) on the covering index `TARGET_LANG_SOURCE` (`TARGET_ID_WIKIDATA`, `LANG`, `ID_WIKIDATA`), added by `doc/sql/alter-link-target-lang-source-index.sql`.
 - `T_WC_WIKIPEDIA_PAGE_LANG_REFERENCE`: one row per footnote cited in a section: `NOTE_KEY` (`cite_note-...`), `LABEL` (`[12]`), `URL`, `TITLE`, `REFERENCE_TEXT` (compressed). 43 % of references have no URL.
 
 The backfill is tracked by the `wikipedia-content-md-backfill` report of `data-monitoring`.
