@@ -98,7 +98,7 @@ This crawler is built and run as a Docker container via the repo's root `Dockerf
 ---
 
 **Last Updated**: 2026-10-17
-**Current Version**: 1.1.3 
+**Current Version**: 1.1.4 
 
 ## Backlog (Nestor second-brain)
 

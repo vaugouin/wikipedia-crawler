@@ -262,11 +262,20 @@ def f_writelangtodb(payload, lngid, wikidata_id, strlanguage, strcontent, intind
     if strimagetable != "" and strimagecolumn != "":
         if strmainimageurl:
             print("Found an image:", strmainimageurl)
-            arrcouples = {}
-            arrcouples["ID_WIKIDATA"] = wikidata_id
-            arrcouples[strimagecolumn] = strmainimageurl
-            strsqlupdatecondition = f"ID_WIKIDATA = '{wikidata_id}'"
-            cp.f_sqlupdatearray(strimagetable, arrcouples, strsqlupdatecondition, 1)
+            # 1.1.4: update only, never insert. f_sqlupdatearray inserts when the row is
+            # missing, which on a Qid the Wikidata crawler has not loaded yet means a row
+            # holding nothing but ID_WIKIDATA and the image: refused on the movie and serie
+            # tables (ID_MOVIE / ID_SERIE NOT NULL, "Field 'ID_SERIE' doesn't have a default
+            # value"), silently accepted as a stub on the others. The image is not lost:
+            # MAIN_IMAGE_URL in T_WC_WIKIPEDIA_PAGE_LANG below carries it either way.
+            cursor2.execute(f"SELECT 1 FROM {strimagetable} WHERE ID_WIKIDATA = %s LIMIT 1", (wikidata_id,))
+            if cursor2.fetchone():
+                arrcouples = {}
+                arrcouples[strimagecolumn] = strmainimageurl
+                strsqlupdatecondition = f"ID_WIKIDATA = '{wikidata_id}'"
+                cp.f_sqlupdatearray(strimagetable, arrcouples, strsqlupdatecondition, 1)
+            else:
+                print(f"No {strimagetable} row for {wikidata_id} yet: legacy image column skipped.")
 
     try:
         arrpageimages = payload["page_images"]
