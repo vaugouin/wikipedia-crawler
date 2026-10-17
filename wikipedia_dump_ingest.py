@@ -37,7 +37,7 @@ import os
 import sys
 import tarfile
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 
 import requests
 from bs4 import BeautifulSoup
@@ -142,6 +142,26 @@ class Stats(dict):
         self[key] = self.get(key, 0) + n
 
 
+def db_is_fresher(cursor, qid, lang, rec):
+    """1.1.7: True when the live crawl stored this page in Markdown after the record's revision.
+
+    The snapshot is a monthly cut: a page the crawler read since then is at least as recent,
+    and overwriting it would put an older revision back. Pages crawled before 1.1.0 (text
+    only) are always taken, the snapshot's Markdown is what they lack.
+    """
+    rev = (rec.get("date_modified") or "")[:19]
+    if not rev:
+        return False
+    cursor.execute("SELECT P.LAST_SUCCESS_AT, EXISTS(SELECT 1 FROM T_WC_WIKIPEDIA_PAGE_LANG_SECTION S "
+                   "WHERE S.ID_WIKIDATA = P.ID_WIKIDATA AND S.LANG = P.LANG AND S.CONTENT_MD <> '') AS HAS_MD "
+                   "FROM T_WC_WIKIPEDIA_PAGE_LANG P WHERE P.ID_WIKIDATA = %s AND P.LANG = %s", (qid, lang))
+    row = cursor.fetchone()
+    if not row or not row["LAST_SUCCESS_AT"] or not row["HAS_MD"]:
+        return False
+    crawled = cp.paris_tz.localize(row["LAST_SUCCESS_AT"]).astimezone(timezone.utc)
+    return crawled >= datetime.strptime(rev, "%Y-%m-%dT%H:%M:%S").replace(tzinfo=timezone.utc)
+
+
 def compare_with_db(cursor, qid, lang, conv, stats):
     """Dry run: how the converted page differs from what the live crawl stored."""
     cursor.execute("SELECT DISPLAY_ORDER, TITLE, CONTENT_MD FROM T_WC_WIKIPEDIA_PAGE_LANG_SECTION "
@@ -230,6 +250,11 @@ def main():
                 content, lngid = target
                 stats.add("targets")
                 stats.add("targets_" + content)
+                fresher = db_is_fresher(cursor2, qid, lang, rec)
+                if fresher:
+                    stats.add("pages_db_fresher")     # skipped by --write, still compared in a dry run
+                    if args.write:
+                        continue
                 html = (rec.get("article_body") or {}).get("html") or ""
                 try:
                     conv = wcmd.convert_page(BeautifulSoup(html, "html.parser"), lang, title)

@@ -629,7 +629,8 @@ WIKIPEDIA-CRAWLER-024. The live crawl reads one page per `action=parse` call and
 
 - images are left as they are (the payload sets `keep_images`): a record carries no image list, and `MAIN_IMAGE_URL` is not touched;
 - links are resolved by the local title join only, never by the Wikipedia API; `--title-map DIR` writes the snapshot's own title to Qid map (redirects flagged) for a later resolution pass;
-- `LAST_CRAWLED_AT` and `LAST_SUCCESS_AT` take the time of the ingest, `HTTP_STATUS` 200.
+- `LAST_CRAWLED_AT` and `LAST_SUCCESS_AT` take the time of the ingest, `HTTP_STATUS` 200;
+- a page the live crawl stored in Markdown after the record's revision (`LAST_SUCCESS_AT` at or after the record's `date_modified`) is skipped (1.1.8, `pages_db_fresher` in the report; a dry run still compares it): the snapshot is a monthly cut and would put an older revision back.
 
 Without `--write` it is a dry run: it reads the database and compares each converted page with what the live crawl stored (sections identical, identical once whitespace is ignored, links), and counts the pages that have no section yet. Stop the main crawler before a `--write` run.
 
