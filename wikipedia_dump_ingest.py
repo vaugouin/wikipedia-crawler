@@ -31,9 +31,12 @@ Credentials: WME_USERNAME / WME_PASSWORD from the environment (.env); never prin
 """
 
 import argparse
+import contextlib
 import gzip
+import io
 import json
 import os
+import re
 import sys
 import tarfile
 import time
@@ -53,6 +56,9 @@ load_dotenv()
 AUTH_URL = "https://auth.enterprise.wikimedia.com/v1/login"
 API = "https://api.enterprise.wikimedia.com"
 TOKEN_MAX_AGE = 12 * 3600          # the access token lasts 24 h: renew well before
+# 1.1.9: f_writelangtodb prints every section title and the format line (about 20,000 lines a
+# chunk); only its error lines reach the report.
+WRITER_ERROR = re.compile(r"error|⚠️|❌", re.IGNORECASE)
 
 
 class Enterprise:
@@ -287,14 +293,20 @@ def main():
                         "refs": conv["refs"],
                         "api_qids": {},                   # title join only, no API call
                     }
+                    out = io.StringIO()
                     try:
-                        f_writelangtodb(payload, lngid, qid, lang, content, config["id"],
-                                        config["imagetable"], config["imagecolumn"], cursor2,
-                                        0, 0, blnwritecounters=False)
+                        with contextlib.redirect_stdout(out):
+                            f_writelangtodb(payload, lngid, qid, lang, content, config["id"],
+                                            config["imagetable"], config["imagecolumn"], cursor2,
+                                            0, 0, blnwritecounters=False)
                         stats.add("pages_written")
                     except Exception as err:
                         stats.add("write_errors")
                         print(f"  write error {qid} {lang} {title}: {err}")
+                    for msg in out.getvalue().splitlines():
+                        if WRITER_ERROR.search(msg):
+                            stats.add("writer_error_lines")
+                            print(f"  {qid} {lang} {title}: {msg.strip()}")
                 if args.limit and total.get("targets", 0) + stats.get("targets", 0) >= args.limit:
                     stop = True
                     break

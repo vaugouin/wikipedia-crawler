@@ -640,7 +640,7 @@ Without `--write` it is a dry run: it reads the database and compares each conve
 ./wikipedia-dump-ingest.sh --lang fr --chunks 0-149 --write --title-map dumpdata
 ```
 
-The report is printed and kept in `dumpdata/ingest-<date>-<time>.log` (ignored by git).
+The report is printed and kept in `dumpdata/ingest-<date>-<time>.log` (ignored by git). Since 1.1.9 it holds one summary line per chunk, the total, and the errors only: what `f_writelangtodb` prints for each page (section titles, format line) is dropped unless it is an error line (`writer_error_lines` in the report).
 
 ## Important detail about resume behavior
 
