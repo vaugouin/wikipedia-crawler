@@ -115,6 +115,8 @@ Since 1.1.0 (topic `wikipedia-rich-sections` in the Nestor t2s-backlog, decision
 
 HTML comments are not text (1.1.3). From 1.1.0 to 1.1.2 the converter wrote out the `NewPP limit report` comment that `action=parse` appends to every page, so the last section of each page converted in that window ends with the parser report, in `CONTENT_MD` and `CONTENT` alike (`doc/sql/check-parser-report-leak.sql` measures it).
 
+Three fixes from the comparison with Wikimedia Enterprise snapshot records (1.1.5, WIKIPEDIA-CRAWLER-024). A link to the page itself (`./Page#Season_1` in Parsoid HTML) is plain text with no link row, as the legacy HTML already gave; the writer passes `parse.title`, and without it the title is read from the Parsoid `<head>`. Text that a template puts straight into a `<div>` is one line again: each text node, italic or spacing `<span>` used to start a line of its own ("1re" / "partie de la trilogie" / "*Les Lavandes*"), in the legacy HTML as in Parsoid, and a `<br>` still ends the line. A section holding only zero-width characters is empty. On four series pages fetched from Wikimedia Enterprise, the links then match the live crawl exactly (2,883 of 2,883) and every remaining Markdown difference is one of those joined lines.
+
 If the converter ever raises on a page, the writer falls back to `extract_titles_and_text()` for that page, with `CONTENT_MD` NULL and no links or references.
 
 ### `wikipedia_images.py`

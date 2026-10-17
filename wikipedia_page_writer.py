@@ -190,7 +190,8 @@ def f_fetchlangpayload(session, wikidata_id, page_title, strkey, strlanguage, ne
             # Should the converter ever fail on a page, the page keeps the legacy plain-text
             # extraction, with no Markdown, links or references, rather than losing its sections.
             try:
-                converted = wcmd.convert_page(soup, strlanguage)
+                # 1.1.5: the page's own title, so links to the page itself stay plain text.
+                converted = wcmd.convert_page(soup, strlanguage, data.get('parse', {}).get('title') or page_title)
                 payload["sections"] = converted["sections"]
                 payload["links"] = converted["links"]
                 payload["refs"] = converted["refs"]

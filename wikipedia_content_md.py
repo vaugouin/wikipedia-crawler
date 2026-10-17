@@ -45,6 +45,12 @@ DROP_CLASSES = {
     "plainlinks", "mw-authority-control", "navigation-not-searchable",
 }
 DROP_TAGS = {"style", "script", "link", "meta", "figure", "img", "audio", "video"}
+# 1.1.5: tags that start a new line. Anything else met inside a container is inline, and a run
+# of inline nodes is one line (template output often puts text straight into a <div>).
+BLOCK_TAGS = {"p", "ul", "ol", "dl", "table", "blockquote", "div", "section", "center", "pre", "hr",
+              "h1", "h2", "h3", "h4", "h5", "h6", "figure"}
+# A section whose Markdown is only these (a lone U+200C on 2026-10-17) is empty.
+INVISIBLE = re.compile(r"[​-‍⁠﻿]")
 
 # Column widths of T_WC_WIKIPEDIA_PAGE_LANG_LINK / _REFERENCE (doc/sql/Wikipedia-tables.sql).
 MAX_ANCHOR = 500
@@ -105,6 +111,23 @@ def wiki_target(href):
     return title, urllib.parse.unquote(fragment).replace("_", " ")
 
 
+def _same_title(a, b):
+    """MediaWiki titles: underscores are spaces and the first letter is case-insensitive."""
+    a, b = (a or "").replace("_", " ").strip(), (b or "").replace("_", " ").strip()
+    return bool(a) and a[:1].upper() + a[1:] == b[:1].upper() + b[1:]
+
+
+def page_title_of(soup):
+    """The page's own title from Parsoid's <head> (dc:isVersionOf, else <title>), or None."""
+    link = soup.find("link", rel="dc:isVersionOf", href=True)
+    if link is not None:
+        target = wiki_target(re.sub(r"^//", "https://", link["href"]))
+        if target:
+            return target[0]
+    title = soup.find("title")
+    return title.get_text(strip=True) if title is not None and title.get_text(strip=True) else None
+
+
 def is_date_link(lang, a_tag, target):
     """True for a link that is part of a date (French Wikipedia only).
 
@@ -125,8 +148,9 @@ class MarkdownRenderer:
     splitter maps it to the final DISPLAY_ORDER once empty sections are dropped.
     """
 
-    def __init__(self, lang):
+    def __init__(self, lang, page_title=None):
         self.lang = lang
+        self.page_title = page_title
         self.links = []          # dicts: section, anchor, target, fragment, redlink, is_date
         self.refs = []           # dicts: section, note, label
         self._refkeys = set()
@@ -177,6 +201,10 @@ class MarkdownRenderer:
                                    "redlink": 1, "is_date": int(is_date_link(self.lang, node, target))})
                 return text
             target = wiki_target(href)
+            if target and _same_title(target[0], self.page_title):
+                # 1.1.5: a link to the page itself ("./Page#Season_1" in Parsoid HTML, a bare
+                # "#Season_1" or an <a class="selflink"> in the legacy one) is not a link.
+                return text
             if target:
                 title, fragment = target
                 self.links.append({"section": self.section, "anchor": text, "target": title, "fragment": fragment,
@@ -229,9 +257,24 @@ class MarkdownRenderer:
             if "hatnote" in _classes(node) or "dablink" in _classes(node):
                 t = self.text_of(node)
                 return [f"*{t}*", ""] if t else []
-            out = []
+            out, run = [], []
+
+            def end_run():
+                t = re.sub(r"[ \t]+", " ", "".join(run)).strip()
+                run.clear()
+                if t:
+                    out.append(t)
+
             for c in node.children:
-                out += self.block(c, depth)
+                if isinstance(c, Tag) and c.name == "br":
+                    end_run()
+                elif isinstance(c, NavigableString) or (isinstance(c, Tag) and c.name not in BLOCK_TAGS
+                                                        and c.find(BLOCK_TAGS) is None):
+                    run.append(self.inline(c))
+                else:
+                    end_run()
+                    out += self.block(c, depth)
+            end_run()
             return out
         t = self.text_of(node)
         return [t] if t else []
@@ -325,7 +368,7 @@ def _top_blocks(parent):
             yield c
 
 
-def split_sections(soup, lang):
+def split_sections(soup, lang, page_title=None):
     """Split the page like extract_titles_and_text and render each section.
 
     Returns (sections, links, refs). ``sections`` is a list of (display_order, title, md)
@@ -333,7 +376,7 @@ def split_sections(soup, lang):
     the display_order of its section.
     """
     root = soup.find("div", class_="mw-parser-output") or soup.body or soup
-    renderer = MarkdownRenderer(lang)
+    renderer = MarkdownRenderer(lang, page_title or page_title_of(soup))
     sections = []
     seq_to_order = {}
     state = {"seq": 0, "h2": None, "title": "Intro", "lines": []}
@@ -342,7 +385,7 @@ def split_sections(soup, lang):
     def flush():
         md = "\n".join(state["lines"])
         md = re.sub(r"\n{3,}", "\n\n", md).strip()
-        if md:
+        if INVISIBLE.sub("", md).strip():
             seq_to_order[state["seq"]] = len(sections) + 1
             sections.append((len(sections) + 1, state["title"], md))
 
@@ -417,15 +460,18 @@ def md_to_text(md):
     return re.sub(r"\n{3,}", "\n\n", "\n".join(out)).strip()
 
 
-def convert_page(soup, lang):
+def convert_page(soup, lang, page_title=None):
     """One page's sections, links and references, ready for the writer.
 
     Returns {"sections": [(display_order, title, text, md)], "links": [...], "refs": [...]}.
     Link dicts: section, display_order, anchor, target, fragment, redlink, is_date.
     Reference dicts: section, display_order, note, label, url, title, text.
     Nothing is resolved here: Qids come from ``resolve_link_qids`` on the main thread.
+    ``page_title`` (1.1.5) is the page's own title, so links to the page itself stay plain
+    text; without it, the title is read from the HTML head when there is one (Parsoid pages,
+    Wikimedia Enterprise records).
     """
-    md_sections, links, refs = split_sections(soup, lang)
+    md_sections, links, refs = split_sections(soup, lang, page_title)
     notes = collect_references(soup)
     sections = [(order, title, md_to_text(md), md) for order, title, md in md_sections]
     counters = {}

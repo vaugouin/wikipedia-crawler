@@ -201,6 +201,36 @@ def test_html_comments_dropped():
     assert r["sections"][0][3] == "Intro text.", r["sections"][0][3]
 
 
+def test_self_links_are_text():
+    # 1.1.5: Parsoid (and Wikimedia Enterprise) write [[#Season 1|1]] as "./Page#Season_1".
+    body = ("<section data-mw-section-id=\"0\"><p>Seasons: <a rel=\"mw:WikiLink\" href=\"./Twin_Peaks#Season_1\">1</a>, "
+            "<a rel=\"mw:WikiLink\" href=\"./twin_Peaks\">this page</a> and <a rel=\"mw:WikiLink\" href=\"./David_Lynch\">Lynch</a>.</p></section>")
+    for html, title in (("<body>" + body + "</body>", "Twin Peaks"),
+                        ("<html><head><title>x</title><link rel=\"dc:isVersionOf\" href=\"//en.wikipedia.org/wiki/Twin_Peaks\"/>"
+                         "</head><body>" + body + "</body></html>", None)):
+        r = wcmd.convert_page(BeautifulSoup(html, "html.parser"), "en", title)
+        assert [l["target"] for l in r["links"]] == ["David Lynch"], r["links"]
+        assert r["sections"][0][3] == "Seasons: 1, this page and [Lynch](David_Lynch).", r["sections"][0][3]
+
+
+def test_inline_runs_in_a_div_are_one_line():
+    # 1.1.5: template output puts text straight into a <div>; each text node, <i> or spacing
+    # <span> used to start a line of its own. A <br> still ends the line.
+    html = ("<body><div class=\"mw-parser-output\"><h2>Épisodes</h2><div style=\"padding:5px\">Connue comme "
+            "<i>La Compagnie</i>, elle publie une annonce<span typeof=\"mw:DisplaySpace\"> </span>:<br/>"
+            "«<span typeof=\"mw:DisplaySpace\"> </span>Je peux aider.<span typeof=\"mw:DisplaySpace\"> </span>»"
+            "</div><b>Commentaires</b><br/><div>Dédié à <a href=\"/wiki/Richard_Lindheim\">Richard Lindheim</a>.</div>"
+            "<h2>Vide</h2><p>‌</p></div></body>")
+    r = _convert(html, "fr")
+    assert [t for _, t, _, _ in r["sections"]] == ["Épisodes"], r["sections"]    # "Vide" holds only a U+200C
+    assert r["sections"][0][3].split("\n") == [
+        "Connue comme *La Compagnie*, elle publie une annonce :",     # no-break spaces collapse, as before
+        "« Je peux aider. »",
+        "**Commentaires**",
+        "Dédié à [Richard Lindheim](Richard_Lindheim).",
+    ], r["sections"][0][3]
+
+
 if __name__ == "__main__":
     tests = [v for k, v in sorted(globals().items()) if k.startswith("test_") and callable(v)]
     for t in tests:
