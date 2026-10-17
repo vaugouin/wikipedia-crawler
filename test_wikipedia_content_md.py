@@ -187,6 +187,20 @@ def test_writer_rows_and_prune():
     assert rrows[2]["URL"] is None and rrows[2]["REFERENCE_TEXT"] == "Smith 2004, p. 3."
 
 
+def test_html_comments_dropped():
+    # 1.1.0 to 1.1.2 wrote the parser report comment out as text, in the page's last section
+    # (a section holding nothing else came out as a "References" section of report lines).
+    report = "<!-- \nNewPP limit report\nParsed by mw-api-int\nCPU time usage: 0.9 seconds\n-->"
+    html = ("<body><div class=\"mw-parser-output\"><p>Intro <!-- inline note -->text.</p>"
+            "<h2>Liens externes</h2><ul><li><a href=\"https://example.org\">Site</a></li></ul>"
+            "<h2>References</h2>" + report + "</div>" + report + "</body>")
+    r = _convert(html, "en")
+    titles = [t for _, t, _, _ in r["sections"]]
+    assert titles == ["Intro", "Liens externes"], titles
+    assert all("NewPP" not in md and "NewPP" not in text for _, _, text, md in r["sections"])
+    assert r["sections"][0][3] == "Intro text.", r["sections"][0][3]
+
+
 if __name__ == "__main__":
     tests = [v for k, v in sorted(globals().items()) if k.startswith("test_") and callable(v)]
     for t in tests:

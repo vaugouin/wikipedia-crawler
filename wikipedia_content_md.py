@@ -31,6 +31,7 @@ import threading
 import urllib.parse
 
 from bs4 import NavigableString, Tag
+from bs4.element import PreformattedString
 
 from wikipedia_crawler_helpers import NO_SUBSPLIT_SECTION_TITLES, _normalize_heading_separator
 from wikipedia_http import get_session, rate_limit
@@ -133,6 +134,9 @@ class MarkdownRenderer:
 
     # -- inline --------------------------------------------------------------
     def inline(self, node):
+        # 1.1.3: comments (the "NewPP limit report" action=parse appends) are not text.
+        if isinstance(node, PreformattedString):
+            return ""
         if isinstance(node, NavigableString):
             return re.sub(r"\s+", " ", str(node))
         if isinstance(node, Tag) and node.name == "sup" and "reference" in _classes(node):
@@ -190,6 +194,8 @@ class MarkdownRenderer:
     # -- blocks --------------------------------------------------------------
     def block(self, node, depth=0):
         """Return a list of Markdown lines for one block-level node."""
+        if isinstance(node, PreformattedString):
+            return []
         if isinstance(node, NavigableString):
             t = str(node).strip()
             return [t] if t else []
