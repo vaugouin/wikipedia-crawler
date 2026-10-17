@@ -1,0 +1,24 @@
+-- alter-link-target-lang-source-index.sql
+-- run on vaugouindb (container damp-vaugouin-com-mariadb-1) at 2026-10-17 05:35:25
+--
++-------------------------------+------------+-------------------------------------------+--------------+-----------------------+-----------+-------------+----------+--------+------+------------+---------+---------------+---------+
+| Table                         | Non_unique | Key_name                                  | Seq_in_index | Column_name           | Collation | Cardinality | Sub_part | Packed | Null | Index_type | Comment | Index_comment | Ignored |
++-------------------------------+------------+-------------------------------------------+--------------+-----------------------+-----------+-------------+----------+--------+------+------------+---------+---------------+---------+
+| T_WC_WIKIPEDIA_PAGE_LANG_LINK |          0 | PRIMARY                                   |            1 | ID_ROW                | A         |     6905813 |     NULL | NULL   |      | BTREE      |         |               | NO      |
+| T_WC_WIKIPEDIA_PAGE_LANG_LINK |          0 | UQ_ID_WIKIDATA_LANG_SECTION_DISPLAY_ORDER |            1 | ID_WIKIDATA           | A         |      103071 |     NULL | NULL   |      | BTREE      |         |               | NO      |
+| T_WC_WIKIPEDIA_PAGE_LANG_LINK |          0 | UQ_ID_WIKIDATA_LANG_SECTION_DISPLAY_ORDER |            2 | LANG                  | A         |       67704 |     NULL | NULL   |      | BTREE      |         |               | NO      |
+| T_WC_WIKIPEDIA_PAGE_LANG_LINK |          0 | UQ_ID_WIKIDATA_LANG_SECTION_DISPLAY_ORDER |            3 | SECTION_DISPLAY_ORDER | A         |      431613 |     NULL | NULL   |      | BTREE      |         |               | NO      |
+| T_WC_WIKIPEDIA_PAGE_LANG_LINK |          0 | UQ_ID_WIKIDATA_LANG_SECTION_DISPLAY_ORDER |            4 | DISPLAY_ORDER         | A         |     6905813 |     NULL | NULL   |      | BTREE      |         |               | NO      |
+| T_WC_WIKIPEDIA_PAGE_LANG_LINK |          1 | LANG_TARGET_TITLE                         |            1 | LANG                  | A         |         265 |     NULL | NULL   |      | BTREE      |         |               | NO      |
+| T_WC_WIKIPEDIA_PAGE_LANG_LINK |          1 | LANG_TARGET_TITLE                         |            2 | TARGET_TITLE          | A         |     1726453 |     NULL | NULL   |      | BTREE      |         |               | NO      |
+| T_WC_WIKIPEDIA_PAGE_LANG_LINK |          1 | ITEM_TYPE                                 |            1 | ITEM_TYPE             | A         |           5 |     NULL | NULL   | YES  | BTREE      |         |               | NO      |
+| T_WC_WIKIPEDIA_PAGE_LANG_LINK |          1 | TIM_UPDATED                               |            1 | TIM_UPDATED           | A         |       40150 |     NULL | NULL   | YES  | BTREE      |         |               | NO      |
+| T_WC_WIKIPEDIA_PAGE_LANG_LINK |          1 | TARGET_LANG_SOURCE                        |            1 | TARGET_ID_WIKIDATA    | A         |     1381162 |     NULL | NULL   | YES  | BTREE      |         |               | NO      |
+| T_WC_WIKIPEDIA_PAGE_LANG_LINK |          1 | TARGET_LANG_SOURCE                        |            2 | LANG                  | A         |     1726453 |     NULL | NULL   |      | BTREE      |         |               | NO      |
+| T_WC_WIKIPEDIA_PAGE_LANG_LINK |          1 | TARGET_LANG_SOURCE                        |            3 | ID_WIKIDATA           | A         |     6905813 |     NULL | NULL   |      | BTREE      |         |               | NO      |
++-------------------------------+------------+-------------------------------------------+--------------+-----------------------+-----------+-------------+----------+--------+------+------------+---------+---------------+---------+
++------+-------------+-------------------------------+------+--------------------------------------+--------------------+---------+-------------+------+--------------------------+
+| id   | select_type | table                         | type | possible_keys                        | key                | key_len | ref         | rows | Extra                    |
++------+-------------+-------------------------------+------+--------------------------------------+--------------------+---------+-------------+------+--------------------------+
+|    1 | SIMPLE      | T_WC_WIKIPEDIA_PAGE_LANG_LINK | ref  | LANG_TARGET_TITLE,TARGET_LANG_SOURCE | TARGET_LANG_SOURCE | 245     | const,const | 4396 | Using where; Using index |
++------+-------------+-------------------------------+------+--------------------------------------+--------------------+---------+-------------+------+--------------------------+

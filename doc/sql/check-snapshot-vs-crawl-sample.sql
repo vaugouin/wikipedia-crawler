@@ -1,0 +1,49 @@
+-- Read-only, run by the agent: a sample of pages the live crawler converted in the last hours, to
+-- compare with the same pages fetched from Wikimedia Enterprise (WIKIPEDIA-CRAWLER-024).
+-- Picks, per language and per item type (movie, person, serie), the two pages with the most
+-- Markdown sections written in the last 3 hours, then dumps for each: the page row, every section
+-- (CONTENT_MD as hex, so line breaks survive the table output), and per section the links
+-- (count, dates, red links, resolved, target titles in order as hex) and references (count, with text).
+
+SET SESSION group_concat_max_len = 1048576;
+
+CREATE TEMPORARY TABLE tmp_pick AS
+SELECT ID_WIKIDATA, LANG, ITEM_TYPE, N_SECTIONS, LAST_UPDATED
+FROM (
+    SELECT s.ID_WIKIDATA, s.LANG, s.ITEM_TYPE, COUNT(*) AS N_SECTIONS, MAX(s.TIM_UPDATED) AS LAST_UPDATED,
+           ROW_NUMBER() OVER (PARTITION BY s.LANG, s.ITEM_TYPE ORDER BY COUNT(*) DESC, s.ID_WIKIDATA) AS RN
+    FROM T_WC_WIKIPEDIA_PAGE_LANG_SECTION s
+    WHERE s.TIM_UPDATED >= NOW() - INTERVAL 3 HOUR
+      AND s.CONTENT_MD IS NOT NULL
+      AND s.ITEM_TYPE IN ('movie', 'person', 'serie')
+      AND COALESCE(s.DELETED, 0) = 0
+    GROUP BY s.ID_WIKIDATA, s.LANG, s.ITEM_TYPE
+) x
+WHERE RN <= 2;
+
+SELECT 'pages' AS PART, p.ID_WIKIDATA, p.LANG, p.ITEM_TYPE, p.N_SECTIONS, p.LAST_UPDATED,
+       l.WIKIPEDIA_PAGE_TITLE, l.LAST_SUCCESS_AT
+FROM tmp_pick p
+JOIN T_WC_WIKIPEDIA_PAGE_LANG l ON l.ID_WIKIDATA = p.ID_WIKIDATA AND l.LANG = p.LANG
+ORDER BY p.LANG, p.ITEM_TYPE, p.ID_WIKIDATA;
+
+SELECT 'sections' AS PART, s.ID_WIKIDATA, s.LANG, s.DISPLAY_ORDER, HEX(s.TITLE) AS TITLE_HEX, HEX(s.CONTENT_MD) AS MD_HEX
+FROM T_WC_WIKIPEDIA_PAGE_LANG_SECTION s
+JOIN tmp_pick p ON p.ID_WIKIDATA = s.ID_WIKIDATA AND p.LANG = s.LANG
+WHERE COALESCE(s.DELETED, 0) = 0
+ORDER BY s.LANG, s.ID_WIKIDATA, s.DISPLAY_ORDER;
+
+SELECT 'links' AS PART, k.ID_WIKIDATA, k.LANG, k.SECTION_DISPLAY_ORDER, COUNT(*) AS N_LINKS,
+       SUM(k.IS_DATE) AS N_DATE, SUM(k.IS_REDLINK) AS N_RED, SUM(k.TARGET_ID_WIKIDATA IS NOT NULL) AS N_RESOLVED,
+       HEX(GROUP_CONCAT(k.TARGET_TITLE ORDER BY k.DISPLAY_ORDER SEPARATOR '\n')) AS TARGETS_HEX
+FROM T_WC_WIKIPEDIA_PAGE_LANG_LINK k
+JOIN tmp_pick p ON p.ID_WIKIDATA = k.ID_WIKIDATA AND p.LANG = k.LANG
+GROUP BY k.ID_WIKIDATA, k.LANG, k.SECTION_DISPLAY_ORDER
+ORDER BY k.LANG, k.ID_WIKIDATA, k.SECTION_DISPLAY_ORDER;
+
+SELECT 'refs' AS PART, r.ID_WIKIDATA, r.LANG, r.SECTION_DISPLAY_ORDER, COUNT(*) AS N_REFS,
+       SUM(COALESCE(r.REFERENCE_TEXT, '') <> '') AS N_WITH_TEXT, SUM(COALESCE(r.URL, '') <> '') AS N_WITH_URL
+FROM T_WC_WIKIPEDIA_PAGE_LANG_REFERENCE r
+JOIN tmp_pick p ON p.ID_WIKIDATA = r.ID_WIKIDATA AND p.LANG = r.LANG
+GROUP BY r.ID_WIKIDATA, r.LANG, r.SECTION_DISPLAY_ORDER
+ORDER BY r.LANG, r.ID_WIKIDATA, r.SECTION_DISPLAY_ORDER;
