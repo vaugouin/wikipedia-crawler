@@ -20,3 +20,6 @@ archive/
 # it already did once, shared-images.txt in commit 7f37bf6.
 /shared-images.txt
 /*.csv
+
+# Wikimedia Enterprise snapshot ingest: run logs and title to Qid maps (wikipedia-dump-ingest.sh).
+/dumpdata/

@@ -231,6 +231,50 @@ def test_inline_runs_in_a_div_are_one_line():
     ], r["sections"][0][3]
 
 
+def test_snapshot_payload_keeps_images():
+    # 1.1.6: wikipedia_dump_ingest.py writes pages with no image list; their image rows stay.
+    import wikipedia_page_writer as wpw
+    sql, saved = [], {}
+
+    class Cur:
+        def execute(self, s, params=None):
+            sql.append(s)
+
+        def fetchone(self):
+            return None
+
+    class Conn:
+        def commit(self):
+            pass
+
+    names = ("f_sqlupdatearray", "f_sqlbulkupsert", "connectioncp", "f_setservervariable")
+    saved = {n: getattr(wpw.cp, n, None) for n in names}
+    wpw.cp.f_sqlupdatearray = lambda *a, **k: None
+    wpw.cp.f_sqlbulkupsert = lambda table, *a, **k: sql.append("UPSERT " + table)
+    wpw.cp.connectioncp = Conn()
+    wpw.cp.f_setservervariable = lambda *a, **k: None
+    saved_links = wpw.f_writelinksandrefs
+    wpw.f_writelinksandrefs = lambda *a, **k: None
+    try:
+        r = _convert(LEGACY, "fr")
+        payload = {"site_key": "frwiki", "page_title": "Sergio Leone", "page_url": "", "main_image_url": "",
+                   "main_image_checked": False, "page_images": [], "keep_images": True, "http_status": 200,
+                   "success": True, "has_content": True, "sections": r["sections"], "links": [], "refs": [], "api_qids": {}}
+        wpw.f_writelangtodb(payload, 1, "Q1", "fr", "person", 202, "T_WC_WIKIDATA_PERSON_V1", "WIKIPEDIA_PROFILE_PATH",
+                            Cur(), 0, 0, blnwritecounters=False)
+        assert not any("PAGE_LANG_IMAGE" in s for s in sql), sql
+        assert "UPSERT T_WC_WIKIPEDIA_PAGE_LANG_SECTION" in sql, sql
+        del payload["keep_images"]
+        sql.clear()
+        wpw.f_writelangtodb(payload, 1, "Q1", "fr", "person", 202, "T_WC_WIKIDATA_PERSON_V1", "WIKIPEDIA_PROFILE_PATH",
+                            Cur(), 0, 0, blnwritecounters=False)
+        assert any(s.startswith("DELETE FROM T_WC_WIKIPEDIA_PAGE_LANG_IMAGE") for s in sql), sql   # the crawl's rule
+    finally:
+        for n, v in saved.items():
+            setattr(wpw.cp, n, v)
+        wpw.f_writelinksandrefs = saved_links
+
+
 if __name__ == "__main__":
     tests = [v for k, v in sorted(globals().items()) if k.startswith("test_") and callable(v)]
     for t in tests:

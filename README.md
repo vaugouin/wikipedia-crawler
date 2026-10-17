@@ -621,6 +621,26 @@ docker run -it --rm --network="host" \
 
 Unlike [test_wikipedia_page_images.py](test_wikipedia_page_images.py) (which only mirrors steps 4–6, the image pipeline), both functions run the **full** per-entity data flow including section extraction and content-specific enrichment.
 
+## Backfill from the Wikimedia Enterprise snapshots (prototype, 1.1.6)
+
+WIKIPEDIA-CRAWLER-024. The live crawl reads one page per `action=parse` call and Wikipedia's rate limits hold it back. The free Wikimedia Enterprise account (`WME_USERNAME` / `WME_PASSWORD` in `.env`) gives the whole of `frwiki` and `enwiki` namespace 0 once a month, as `.tar.gz` chunks of NDJSON records: 150 chunks for frwiki, 435 for enwiki, 1,500 chunk downloads a month on the free tier. Each record carries the page's Qid, title, redirects and Parsoid HTML.
+
+`wikipedia_dump_ingest.py` streams the chunks (nothing is written to disk), keeps the records whose Qid a crawler family selects (the `wikipedia_queries` builders, exclusion chains included), converts them with `convert_page` and, with `--write`, persists them with `f_writelangtodb`: sections, `CONTENT_MD`, links, references, the French movie format line. What differs from a live crawl:
+
+- images are left as they are (the payload sets `keep_images`): a record carries no image list, and `MAIN_IMAGE_URL` is not touched;
+- links are resolved by the local title join only, never by the Wikipedia API; `--title-map DIR` writes the snapshot's own title to Qid map (redirects flagged) for a later resolution pass;
+- `LAST_CRAWLED_AT` and `LAST_SUCCESS_AT` take the time of the ingest, `HTTP_STATUS` 200.
+
+Without `--write` it is a dry run: it reads the database and compares each converted page with what the live crawl stored (sections identical, identical once whitespace is ignored, links), and counts the pages that have no section yet. Stop the main crawler before a `--write` run.
+
+```bash
+./wikipedia-dump-ingest.sh --lang fr --chunks 0                 # dry run, one chunk
+./wikipedia-dump-ingest.sh --lang fr --chunks 0 --write         # main crawler stopped
+./wikipedia-dump-ingest.sh --lang fr --chunks 0-149 --write --title-map dumpdata
+```
+
+The report is printed and kept in `dumpdata/ingest-<date>-<time>.log` (ignored by git).
+
 ## Important detail about resume behavior
 
 The resume mechanism is checkpoint-based, not transactionally exact.

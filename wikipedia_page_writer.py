@@ -278,6 +278,9 @@ def f_writelangtodb(payload, lngid, wikidata_id, strlanguage, strcontent, intind
             else:
                 print(f"No {strimagetable} row for {wikidata_id} yet: legacy image column skipped.")
 
+    # 1.1.6: a Wikimedia Enterprise snapshot record carries no image list
+    # (wikipedia_dump_ingest.py sets keep_images): its page keeps the image rows it has.
+    blnwriteimages = not payload.get("keep_images")
     try:
         arrpageimages = payload["page_images"]
         # WIKIPEDIA-CRAWLER-019 (correctif B): there is deliberately NO first-page-image
@@ -300,7 +303,7 @@ def f_writelangtodb(payload, lngid, wikidata_id, strlanguage, strcontent, intind
         #
         # Consequence, accepted: entities whose Wikipedia page has no lead image now
         # keep no main image at all. An empty illustration is honest; a guess is not.
-        if not strmainimageurl and strimagetable != "" and strimagecolumn != "":
+        if blnwriteimages and not strmainimageurl and strimagetable != "" and strimagecolumn != "":
             print(f"No lead image for {wikidata_id} ({strlanguage}): "
                   f"{len(arrpageimages)} page image(s) available, none used as main "
                   f"image (no fallback by design). Column left untouched.")
@@ -330,7 +333,7 @@ def f_writelangtodb(payload, lngid, wikidata_id, strlanguage, strcontent, intind
             cursor2.execute(
                 f"DELETE FROM T_WC_WIKIPEDIA_PAGE_LANG_IMAGE WHERE ID_WIKIDATA = '{wikidata_id}' AND LANG = '{strlanguage}' AND DISPLAY_ORDER > {len(arrimagerows)}"
             )
-        else:
+        elif blnwriteimages:
             cursor2.execute(
                 f"DELETE FROM T_WC_WIKIPEDIA_PAGE_LANG_IMAGE WHERE ID_WIKIDATA = '{wikidata_id}' AND LANG = '{strlanguage}'"
             )
