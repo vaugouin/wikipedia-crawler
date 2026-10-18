@@ -35,12 +35,18 @@ import contextlib
 import gzip
 import io
 import json
+import multiprocessing as mp
 import os
 import re
 import sys
 import tarfile
 import time
 from datetime import datetime, timezone
+
+try:
+    import resource                       # Linux only: the chunk process's peak memory
+except ImportError:
+    resource = None
 
 import requests
 from bs4 import BeautifulSoup
@@ -224,104 +230,38 @@ def main():
     targets = load_targets(families)
     print(f"targets: {len(targets)} Qids")
 
-    conn = cp.f_getconnection()
-    cursor2 = conn.cursor()
     total = Stats()
-    stop = False
+    max_rss_mb = 0
+    # 1.1.11: one forked child per chunk. Batch 2 of frwiki was killed by the kernel's OOM killer
+    # in its 32nd chunk with 21 GB resident: memory grew from chunk to chunk. A child returns all
+    # of it when it exits, whatever the cause, and inherits the target map without reloading it.
+    ctx = mp.get_context("fork") if "fork" in mp.get_all_start_methods() else None
     for idx in chunks:
         chunk = available[idx]
-        stats = Stats()
         t0 = time.time()
-        tmap = None
-        if args.title_map:
-            os.makedirs(args.title_map, exist_ok=True)
-            tpath = os.path.join(args.title_map, f"{chunk}.tsv.gz")
-            tmap = gzip.open(tpath + ".part", "wt", encoding="utf-8")
-        try:
-            for line in wme.records(ident, chunk):
-                stats.add("records")
-                stats.add("bytes", len(line))
-                rec = json.loads(line)
-                qid = (rec.get("main_entity") or {}).get("identifier")
-                title = rec.get("name") or ""
-                if tmap is not None and qid and title:
-                    tmap.write(f"{title}\t{qid}\t0\n")
-                    for red in rec.get("redirects") or []:
-                        if red.get("name"):
-                            tmap.write(f"{red['name']}\t{qid}\t1\n")
-                if not qid:
-                    stats.add("records_without_qid")
-                    continue
-                target = targets.get(qid)
-                if target is None:
-                    continue
-                content, lngid = target
-                stats.add("targets")
-                stats.add("targets_" + content)
-                fresher = db_is_fresher(cursor2, qid, lang, rec)
-                if fresher:
-                    stats.add("pages_db_fresher")     # skipped by --write, still compared in a dry run
-                    if args.write:
-                        continue
-                html = (rec.get("article_body") or {}).get("html") or ""
-                try:
-                    conv = wcmd.convert_page(BeautifulSoup(html, "html.parser"), lang, title)
-                except Exception as err:
-                    stats.add("convert_errors")
-                    print(f"  convert error {qid} {lang} {title}: {err}")
-                    continue
-                stats.add("sections", len(conv["sections"]))
-                stats.add("links", len(conv["links"]))
-                stats.add("refs", len(conv["refs"]))
-                if conv["links"]:
-                    stats.add("pages_with_links")
-                if not args.write:
-                    compare_with_db(cursor2, qid, lang, conv, stats)
-                else:
-                    config = CONTENT_CONFIG[content]
-                    payload = {
-                        "site_key": f"{lang}wiki",
-                        "page_title": title,
-                        "page_url": rec.get("url") or "",
-                        "main_image_url": "",
-                        "main_image_checked": False,      # MAIN_IMAGE_URL left as it is
-                        "page_images": [],
-                        "keep_images": True,
-                        "http_status": 200,
-                        "success": True,
-                        "has_content": bool(conv["sections"]),
-                        "sections": conv["sections"],
-                        "links": conv["links"],
-                        "refs": conv["refs"],
-                        "api_qids": {},                   # title join only, no API call
-                    }
-                    out = io.StringIO()
-                    try:
-                        with contextlib.redirect_stdout(out):
-                            f_writelangtodb(payload, lngid, qid, lang, content, config["id"],
-                                            config["imagetable"], config["imagecolumn"], cursor2,
-                                            0, 0, blnwritecounters=False)
-                        stats.add("pages_written")
-                    except Exception as err:
-                        stats.add("write_errors")
-                        print(f"  write error {qid} {lang} {title}: {err}")
-                    for msg in out.getvalue().splitlines():
-                        if WRITER_ERROR.search(msg) and not WRITER_TITLE.match(msg):
-                            stats.add("writer_error_lines")
-                            print(f"  {qid} {lang} {title}: {msg.strip()}")
-                if args.limit and total.get("targets", 0) + stats.get("targets", 0) >= args.limit:
-                    stop = True
-                    break
-        except Exception as err:
-            stats.add("chunk_errors")
-            print(f"chunk {chunk}: stream error after {stats.get('records', 0)} records: {err}")
-        finally:
-            if tmap is not None:
-                tmap.close()
-                if not stats.get("chunk_errors") and not stop:
-                    os.replace(tpath + ".part", tpath)
+        limit_left = args.limit - total.get("targets", 0) if args.limit else 0
+        if ctx is None:
+            stats, stop = ingest_chunk(args, wme, ident, chunk, targets, limit_left)
+        else:
+            wme.headers()                         # renew the token here, not once in each child
+            rd, wr = ctx.Pipe(duplex=False)
+            proc = ctx.Process(target=chunk_worker, args=(wr, args, wme, ident, chunk, targets, limit_left))
+            proc.start()
+            wr.close()
+            try:
+                result = rd.recv()
+            except EOFError:
+                result = None
+            rd.close()
+            proc.join()
+            if result is None:
+                stats, stop = Stats(chunk_errors=1), False
+                print(f"chunk {chunk}: worker died without a report (exit code {proc.exitcode}, -9 is a kill)")
+            else:
+                stats, stop = Stats(result[0]), result[1]
         elapsed = time.time() - t0
         print(f"chunk {chunk} ({elapsed:.0f}s): " + ", ".join(f"{k} {v}" for k, v in sorted(stats.items())))
+        max_rss_mb = max(max_rss_mb, stats.pop("max_rss_mb", 0))
         for k, v in stats.items():
             total.add(k, v)
         if stop:
@@ -332,12 +272,121 @@ def main():
     print(f"TOTAL ({time.time() - started:.0f}s, {len(chunks)} chunk(s) asked)")
     for k, v in sorted(total.items()):
         print(f"  {k}: {v}")
+    if max_rss_mb:
+        print(f"  max_rss_mb (largest chunk process): {max_rss_mb}")
     if total.get("cmp_sections_db"):
         print(f"  => sections identical {100 * total['cmp_sections_identical'] / total['cmp_sections_db']:.1f} %, "
               f"identical once whitespace is ignored "
               f"{100 * (total['cmp_sections_identical'] + total.get('cmp_sections_identical_but_whitespace', 0)) / total['cmp_sections_db']:.1f} %")
     if total.get("targets"):
         print(f"  => pages with links {100 * total.get('pages_with_links', 0) / total['targets']:.1f} % of target pages")
+
+
+def chunk_worker(pipe, args, wme, ident, chunk, targets, limit_left):
+    """Child process for one chunk: its own database connection, its stats sent back to the parent."""
+    cp.connectioncp = None                       # the inherited socket belongs to the parent
+    stats, stop = ingest_chunk(args, wme, ident, chunk, targets, limit_left)
+    if resource is not None:
+        stats["max_rss_mb"] = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss // 1024
+    pipe.send((dict(stats), stop))
+    pipe.close()
+
+
+def ingest_chunk(args, wme, ident, chunk, targets, limit_left):
+    """Stream one chunk, write (or compare) its target pages. Returns (stats, stop)."""
+    lang = args.lang
+    cursor2 = cp.f_getconnection().cursor()
+    stats = Stats()
+    stop = False
+    tmap = None
+    if args.title_map:
+        os.makedirs(args.title_map, exist_ok=True)
+        tpath = os.path.join(args.title_map, f"{chunk}.tsv.gz")
+        tmap = gzip.open(tpath + ".part", "wt", encoding="utf-8")
+    try:
+        for line in wme.records(ident, chunk):
+            stats.add("records")
+            stats.add("bytes", len(line))
+            rec = json.loads(line)
+            qid = (rec.get("main_entity") or {}).get("identifier")
+            title = rec.get("name") or ""
+            if tmap is not None and qid and title:
+                tmap.write(f"{title}\t{qid}\t0\n")
+                for red in rec.get("redirects") or []:
+                    if red.get("name"):
+                        tmap.write(f"{red['name']}\t{qid}\t1\n")
+            if not qid:
+                stats.add("records_without_qid")
+                continue
+            target = targets.get(qid)
+            if target is None:
+                continue
+            content, lngid = target
+            stats.add("targets")
+            stats.add("targets_" + content)
+            fresher = db_is_fresher(cursor2, qid, lang, rec)
+            if fresher:
+                stats.add("pages_db_fresher")     # skipped by --write, still compared in a dry run
+                if args.write:
+                    continue
+            html = (rec.get("article_body") or {}).get("html") or ""
+            try:
+                conv = wcmd.convert_page(BeautifulSoup(html, "html.parser"), lang, title)
+            except Exception as err:
+                stats.add("convert_errors")
+                print(f"  convert error {qid} {lang} {title}: {err}")
+                continue
+            stats.add("sections", len(conv["sections"]))
+            stats.add("links", len(conv["links"]))
+            stats.add("refs", len(conv["refs"]))
+            if conv["links"]:
+                stats.add("pages_with_links")
+            if not args.write:
+                compare_with_db(cursor2, qid, lang, conv, stats)
+            else:
+                config = CONTENT_CONFIG[content]
+                payload = {
+                    "site_key": f"{lang}wiki",
+                    "page_title": title,
+                    "page_url": rec.get("url") or "",
+                    "main_image_url": "",
+                    "main_image_checked": False,      # MAIN_IMAGE_URL left as it is
+                    "page_images": [],
+                    "keep_images": True,
+                    "http_status": 200,
+                    "success": True,
+                    "has_content": bool(conv["sections"]),
+                    "sections": conv["sections"],
+                    "links": conv["links"],
+                    "refs": conv["refs"],
+                    "api_qids": {},                   # title join only, no API call
+                }
+                out = io.StringIO()
+                try:
+                    with contextlib.redirect_stdout(out):
+                        f_writelangtodb(payload, lngid, qid, lang, content, config["id"],
+                                        config["imagetable"], config["imagecolumn"], cursor2,
+                                        0, 0, blnwritecounters=False)
+                    stats.add("pages_written")
+                except Exception as err:
+                    stats.add("write_errors")
+                    print(f"  write error {qid} {lang} {title}: {err}")
+                for msg in out.getvalue().splitlines():
+                    if WRITER_ERROR.search(msg) and not WRITER_TITLE.match(msg):
+                        stats.add("writer_error_lines")
+                        print(f"  {qid} {lang} {title}: {msg.strip()}")
+            if limit_left and stats.get("targets", 0) >= limit_left:
+                stop = True
+                break
+    except Exception as err:
+        stats.add("chunk_errors")
+        print(f"chunk {chunk}: stream error after {stats.get('records', 0)} records: {err}")
+    finally:
+        if tmap is not None:
+            tmap.close()
+            if not stats.get("chunk_errors") and not stop:
+                os.replace(tpath + ".part", tpath)
+    return stats, stop
 
 
 if __name__ == "__main__":

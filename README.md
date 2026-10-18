@@ -640,7 +640,9 @@ Without `--write` it is a dry run: it reads the database and compares each conve
 ./wikipedia-dump-ingest.sh --lang fr --chunks 0-149 --write --title-map dumpdata
 ```
 
-The report is printed and kept in `dumpdata/ingest-<date>-<time>.log` (ignored by git). Since 1.1.9 it holds one summary line per chunk, the total, and the errors only: what `f_writelangtodb` prints for each page (section titles, format line) is dropped unless it is an error line (`writer_error_lines` in the report).
+The report is printed and kept in `dumpdata/ingest-<date>-<time>.log` (ignored by git). Since 1.1.9 it holds one summary line per chunk, the total, and the errors only: what `f_writelangtodb` prints for each page (section titles, format line) is dropped unless it is an error line (`writer_error_lines` in the report; since 1.1.10 "error" must be a whole word, so "terrorisme" in a section title no longer counts).
+
+Since 1.1.11 each chunk runs in its own forked process, which gives its memory back when it exits. On 2026-10-18 a single process reached 21 GB after 31 chunks and the kernel's OOM killer stopped the run in chunk 107 (`dmesg -T | grep -i oom`). A chunk whose process dies is reported as `worker died without a report (exit code ...)`, counted in `chunk_errors`, its title map left as `.part`, and the run goes on with the next chunk. Each chunk line and the total show `max_rss_mb`, the peak memory of a chunk process.
 
 ## Important detail about resume behavior
 
