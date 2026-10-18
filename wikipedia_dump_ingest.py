@@ -57,8 +57,10 @@ AUTH_URL = "https://auth.enterprise.wikimedia.com/v1/login"
 API = "https://api.enterprise.wikimedia.com"
 TOKEN_MAX_AGE = 12 * 3600          # the access token lasts 24 h: renew well before
 # 1.1.9: f_writelangtodb prints every section title and the format line (about 20,000 lines a
-# chunk); only its error lines reach the report.
-WRITER_ERROR = re.compile(r"error|⚠️|❌", re.IGNORECASE)
+# chunk); only its error lines reach the report. 1.1.10: "error" as a whole word, and never in a
+# section title line ("12. Title: ..."): a bare "error" matched "terrorisme" and "terroriste".
+WRITER_ERROR = re.compile(r"\berror\b|⚠️|❌", re.IGNORECASE)
+WRITER_TITLE = re.compile(r"^\s*\d+\. Title: ")
 
 
 class Enterprise:
@@ -304,7 +306,7 @@ def main():
                         stats.add("write_errors")
                         print(f"  write error {qid} {lang} {title}: {err}")
                     for msg in out.getvalue().splitlines():
-                        if WRITER_ERROR.search(msg):
+                        if WRITER_ERROR.search(msg) and not WRITER_TITLE.match(msg):
                             stats.add("writer_error_lines")
                             print(f"  {qid} {lang} {title}: {msg.strip()}")
                 if args.limit and total.get("targets", 0) + stats.get("targets", 0) >= args.limit:
