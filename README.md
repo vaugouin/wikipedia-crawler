@@ -644,6 +644,34 @@ The report is printed and kept in `dumpdata/ingest-<date>-<time>.log` (ignored b
 
 Since 1.1.11 each chunk runs in its own forked process, which gives its memory back when it exits. On 2026-10-18 a single process reached 21 GB after 31 chunks and the kernel's OOM killer stopped the run in chunk 107 (`dmesg -T | grep -i oom`). A chunk whose process dies is reported as `worker died without a report (exit code ...)`, counted in `chunk_errors`, its title map left as `.part`, and the run goes on with the next chunk. Each chunk line and the total show `max_rss_mb`, the peak memory of a chunk process.
 
+### Automatic monthly ingest (1.1.12, WIKIPEDIA-CRAWLER-025)
+
+`run-if-new-snapshot.sh`, in cron once a day, does the whole thing without a command line per batch, on the model of `wikidata-crawler/run-if-new-dump.sh`:
+
+1. a `flock`, and an immediate exit while the `wikipedia-dump-ingest` container runs;
+2. `wikipedia_dump_ingest.py --check` in a throwaway container: exit 0 when a snapshot waits (a new one, or a run left unfinished), 1 when every snapshot is in, 2 when it cannot tell (any failure reads 2, never 1);
+3. on 0, it writes `dumpdata/INGEST_IN_PROGRESS`, stops the `wikipedia-crawler` container and starts `wikipedia_dump_ingest.py --auto --title-map dumpdata` with `docker run -d`. No `nohup`, no terminal: follow it with `docker logs -f wikipedia-dump-ingest` or `dumpdata/ingest-auto-<date>-<time>.log`.
+
+`--auto` ingests, for every language of `WME_INGEST_LANGS` (default `fr,en`), the latest snapshot not yet ingested whole, chunk by chunk, with `--write`. The state lives in `T_WC_SERVER_VARIABLE`:
+
+| Variable | Holds |
+|---|---|
+| `strwikipediadumpingest<lang>snapshotdone` | `date_modified` of the last snapshot ingested whole |
+| `strwikipediadumpingest<lang>snapshotcurrent` | `date_modified` of the snapshot being ingested |
+| `strwikipediadumpingest<lang>chunksdone` | its chunks done without error, as ranges (`0-74,76`) |
+| `strwikipediadumpingest<lang>startdatetime`, `...enddatetime` | start and end of that snapshot's ingest (Paris time) |
+| `strwikipediadumpingeststatus` | the chunk in progress, or `idle` |
+
+A chunk in error is retried once at the end of its language. A run that dies resumes at the next daily check with the chunks not done, and the crawler stays stopped meanwhile. When every language is whole, `--auto` deletes `dumpdata/INGEST_IN_PROGRESS` and the crawler's own cron starts the crawler again: `wikipedia-crawler.sh` refuses to start it while the flag exists or a `wikipedia-dump-ingest` container runs.
+
+`--check` calls the Enterprise API only when a language's last whole snapshot is older than the current month: snapshots come out on the 1st, so the API is asked a few times a month at most. Snapshots ingested by hand-run batches are recorded with `./wikipedia-dump-ingest.sh --mark-complete fr`. The title maps keep one file per chunk name, so a new snapshot overwrites the previous month's.
+
+```bash
+./run-if-new-snapshot.sh --dry-run          # what it would do
+# crontab -e:
+41 6 * * * /home/debian/docker/wikipedia-crawler/run-if-new-snapshot.sh >> /home/debian/docker/wikipedia-crawler/dumpdata/run-if-new-snapshot.log 2>&1
+```
+
 ## Important detail about resume behavior
 
 The resume mechanism is checkpoint-based, not transactionally exact.

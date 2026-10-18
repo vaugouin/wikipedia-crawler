@@ -1,5 +1,13 @@
 #!/bin/bash
 
+# WIKIPEDIA-CRAWLER-025: while the snapshot ingest runs (run-if-new-snapshot.sh writes the flag,
+# wikipedia_dump_ingest.py --auto deletes it once every snapshot is in), the crawler stays stopped:
+# both would upsert the same rows. A hand-run ingest container holds it back too.
+if [ -f /home/debian/docker/wikipedia-crawler/dumpdata/INGEST_IN_PROGRESS ] || [ $(docker ps -q -f name=^wikipedia-dump-ingest$) ]; then
+    echo "Snapshot ingest in progress: wikipedia-crawler not started."
+    exit 0
+fi
+
 # Check if the wikipedia-crawler Docker container is running.
 # The name filter is a regex, and an unanchored one also matches the on-demand
 # `wikipedia-crawler-manual` container: without ^...$ this script would report

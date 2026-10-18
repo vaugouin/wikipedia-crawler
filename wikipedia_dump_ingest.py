@@ -26,6 +26,9 @@ Usage (on the VPS, through wikipedia-dump-ingest.sh):
     python wikipedia_dump_ingest.py --lang fr --chunks 0                 # dry run, one chunk
     python wikipedia_dump_ingest.py --lang fr --chunks 0-4 --title-map dumpdata
     python wikipedia_dump_ingest.py --lang fr --chunks 0 --write         # crawler stopped first
+    python wikipedia_dump_ingest.py --check            # 0 a snapshot waits, 1 nothing to do, 2 cannot tell
+    python wikipedia_dump_ingest.py --auto             # every language, resumed (run-if-new-snapshot.sh)
+    python wikipedia_dump_ingest.py --mark-complete fr # record a snapshot ingested by hand-run batches
 
 Credentials: WME_USERNAME / WME_PASSWORD from the environment (.env); never printed.
 """
@@ -203,73 +206,63 @@ def compare_with_db(cursor, qid, lang, conv, stats):
     stats.add("cmp_links_snap", len(conv["links"]))
 
 
-def main():
-    ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    ap.add_argument("--lang", required=True, choices=["en", "fr"])
-    ap.add_argument("--chunks", required=True, help="chunk indexes: 0, 0-4, 0,7,12-14")
-    ap.add_argument("--write", action="store_true", help="persist the pages (default: dry run)")
-    ap.add_argument("--families", default="", help="comma-separated families (default: all)")
-    ap.add_argument("--limit", type=int, default=0, help="stop after N target pages (0: no cap)")
-    ap.add_argument("--title-map", default="", help="directory for the per-chunk title to Qid maps")
-    args = ap.parse_args()
-
-    lang = args.lang
-    ident = f"{lang}wiki_namespace_0"
-    families = {f for f in args.families.split(",") if f}
-    started = time.time()
-    print(f"wikipedia_dump_ingest {ident} chunks {args.chunks} "
-          f"{'WRITE' if args.write else 'dry run (nothing written)'} "
-          f"{datetime.now(cp.paris_tz).strftime('%Y-%m-%d %H:%M:%S')}")
-
-    wme = Enterprise()
-    meta = wme.snapshot(ident)
-    available = [c if isinstance(c, str) else c.get("identifier") for c in (meta.get("chunks") or [])]
-    print(f"snapshot {ident}: modified {meta.get('date_modified')}, {len(available)} chunks")
-    chunks = parse_chunks(args.chunks, available)
-
-    targets = load_targets(families)
-    print(f"targets: {len(targets)} Qids")
-
-    total = Stats()
-    max_rss_mb = 0
-    # 1.1.11: one forked child per chunk. Batch 2 of frwiki was killed by the kernel's OOM killer
-    # in its 32nd chunk with 21 GB resident: memory grew from chunk to chunk. A child returns all
-    # of it when it exits, whatever the cause, and inherits the target map without reloading it.
-    ctx = mp.get_context("fork") if "fork" in mp.get_all_start_methods() else None
-    for idx in chunks:
-        chunk = available[idx]
-        t0 = time.time()
-        limit_left = args.limit - total.get("targets", 0) if args.limit else 0
-        if ctx is None:
-            stats, stop = ingest_chunk(args, wme, ident, chunk, targets, limit_left)
+def chunk_ranges(done):
+    """{0, 1, 2, 5} -> "0-2,5": the done set as a server variable (VAR_VALUE is 255 chars)."""
+    out, run = [], []
+    for i in sorted(done):
+        if run and i == run[-1] + 1:
+            run.append(i)
         else:
-            wme.headers()                         # renew the token here, not once in each child
-            rd, wr = ctx.Pipe(duplex=False)
-            proc = ctx.Process(target=chunk_worker, args=(wr, args, wme, ident, chunk, targets, limit_left))
-            proc.start()
-            wr.close()
-            try:
-                result = rd.recv()
-            except EOFError:
-                result = None
-            rd.close()
-            proc.join()
-            if result is None:
-                stats, stop = Stats(chunk_errors=1), False
-                print(f"chunk {chunk}: worker died without a report (exit code {proc.exitcode}, -9 is a kill)")
-            else:
-                stats, stop = Stats(result[0]), result[1]
-        elapsed = time.time() - t0
-        print(f"chunk {chunk} ({elapsed:.0f}s): " + ", ".join(f"{k} {v}" for k, v in sorted(stats.items())))
-        max_rss_mb = max(max_rss_mb, stats.pop("max_rss_mb", 0))
-        for k, v in stats.items():
-            total.add(k, v)
-        if stop:
-            print(f"--limit {args.limit} reached")
-            break
+            if run:
+                out.append(f"{run[0]}-{run[-1]}" if len(run) > 1 else str(run[0]))
+            run = [i]
+    if run:
+        out.append(f"{run[0]}-{run[-1]}" if len(run) > 1 else str(run[0]))
+    return ",".join(out)
 
+
+def parse_ranges(text):
+    out = set()
+    for part in (text or "").split(","):
+        if part.strip():
+            a, _, b = part.partition("-")
+            out.update(range(int(a), int(b or a) + 1))
+    return out
+
+
+def snapshot_chunks(meta):
+    return [c if isinstance(c, str) else c.get("identifier") for c in (meta.get("chunks") or [])]
+
+
+def run_one_chunk(args, wme, ident, chunk, targets, limit_left, ctx):
+    """One chunk in a forked child (1.1.11), or inline where fork does not exist. Prints its line."""
+    t0 = time.time()
+    if ctx is None:
+        stats, stop = ingest_chunk(args, wme, ident, chunk, targets, limit_left)
+    else:
+        wme.headers()                         # renew the token here, not once in each child
+        rd, wr = ctx.Pipe(duplex=False)
+        proc = ctx.Process(target=chunk_worker, args=(wr, args, wme, ident, chunk, targets, limit_left))
+        proc.start()
+        wr.close()
+        try:
+            result = rd.recv()
+        except EOFError:
+            result = None
+        rd.close()
+        proc.join()
+        if result is None:
+            stats, stop = Stats(chunk_errors=1), False
+            print(f"chunk {chunk}: worker died without a report (exit code {proc.exitcode}, -9 is a kill)")
+        else:
+            stats, stop = Stats(result[0]), result[1]
+    print(f"chunk {chunk} ({time.time() - t0:.0f}s): " + ", ".join(f"{k} {v}" for k, v in sorted(stats.items())))
+    return stats, stop
+
+
+def print_total(total, started, nchunks, max_rss_mb):
     print("-" * 80)
-    print(f"TOTAL ({time.time() - started:.0f}s, {len(chunks)} chunk(s) asked)")
+    print(f"TOTAL ({time.time() - started:.0f}s, {nchunks} chunk(s) asked)")
     for k, v in sorted(total.items()):
         print(f"  {k}: {v}")
     if max_rss_mb:
@@ -280,6 +273,198 @@ def main():
               f"{100 * (total['cmp_sections_identical'] + total.get('cmp_sections_identical_but_whitespace', 0)) / total['cmp_sections_db']:.1f} %")
     if total.get("targets"):
         print(f"  => pages with links {100 * total.get('pages_with_links', 0) / total['targets']:.1f} % of target pages")
+
+
+# -- Automatic mode (1.1.12, WIKIPEDIA-CRAWLER-025) ---------------------------------------------
+# run-if-new-snapshot.sh asks --check every day and starts --auto in a detached container when it
+# answers "work to do". Per language, three server variables hold the state:
+#   strwikipediadumpingest<lang>snapshotdone     date_modified of the last snapshot ingested whole
+#   strwikipediadumpingest<lang>snapshotcurrent  date_modified of the snapshot being ingested
+#   strwikipediadumpingest<lang>chunksdone       its chunks done without error, as ranges ("0-74,76")
+# A run that dies resumes at the next check with the chunks not yet done; a chunk in error is
+# retried once at the end of its language, then left for the next run.
+
+AUTO_LANGS = [x for x in (os.getenv("WME_INGEST_LANGS") or "fr,en").split(",") if x]
+SV = "strwikipediadumpingest"
+INGEST_FLAG = os.path.join("dumpdata", "INGEST_IN_PROGRESS")
+
+
+def sv_get(name):
+    return cp.f_getservervariable(SV + name, 0) or ""
+
+
+def sv_set(name, value, desc):
+    cp.f_setservervariable(SV + name, str(value), desc, 0)
+
+
+def check(wme):
+    """Exit code for run-if-new-snapshot.sh: 0 work to do, 1 nothing to do, 2 cannot tell."""
+    asked = []
+    for lang in AUTO_LANGS:
+        current, done = sv_get(lang + "snapshotcurrent"), sv_get(lang + "snapshotdone")
+        if current and current != done:
+            print(f"{lang}: snapshot {current} not finished (chunks done {sv_get(lang + 'chunksdone') or 'none'})")
+            return 0
+        # Snapshots come out on the 1st: one ingested this month cannot have a successor yet,
+        # so the API is asked only from the 1st until the new one is in (a few calls a month).
+        if done[:7] == datetime.now(timezone.utc).strftime("%Y-%m"):
+            print(f"{lang}: snapshot {done} already ingested this month")
+            continue
+        asked.append((lang, done))
+    for lang, done in asked:
+        try:
+            latest = wme.snapshot(f"{lang}wiki_namespace_0").get("date_modified") or ""
+        except Exception as err:
+            print(f"{lang}: snapshot metadata unavailable: {err}")
+            return 2
+        if not latest:
+            print(f"{lang}: snapshot metadata without date_modified")
+            return 2
+        if latest != done:
+            print(f"{lang}: new snapshot {latest} (last ingested: {done or 'none'})")
+            return 0
+        print(f"{lang}: snapshot {latest} already ingested")
+    return 1
+
+
+def mark_complete(wme, lang):
+    """Record the current snapshot of lang as ingested whole (after hand-run batches)."""
+    meta = wme.snapshot(f"{lang}wiki_namespace_0")
+    date, n = meta.get("date_modified") or "", len(snapshot_chunks(meta))
+    sv_set(lang + "snapshotcurrent", date, f"{lang}wiki snapshot being ingested (date_modified)")
+    sv_set(lang + "chunksdone", chunk_ranges(range(n)), f"{lang}wiki snapshot chunks ingested without error")
+    sv_set(lang + "snapshotdone", date, f"{lang}wiki snapshot last ingested whole (date_modified)")
+    print(f"{lang}: snapshot {date} marked as ingested whole ({n} chunks)")
+
+
+def run_auto(args, wme, targets, ctx):
+    """Every language's latest snapshot, resumed from the server variables. True when all are whole."""
+    args.write = True
+    args.title_map = args.title_map or "dumpdata"
+    args.limit = 0
+    complete = True
+    for lang in AUTO_LANGS:
+        ident = f"{lang}wiki_namespace_0"
+        meta = wme.snapshot(ident)
+        date, available = meta.get("date_modified") or "", snapshot_chunks(meta)
+        if not date or not available:
+            print(f"{lang}: snapshot metadata incomplete, language skipped")
+            complete = False
+            continue
+        if date == sv_get(lang + "snapshotdone"):
+            print(f"{lang}: snapshot {date} already ingested")
+            continue
+        if sv_get(lang + "snapshotcurrent") != date:
+            sv_set(lang + "snapshotcurrent", date, f"{lang}wiki snapshot being ingested (date_modified)")
+            sv_set(lang + "chunksdone", "", f"{lang}wiki snapshot chunks ingested without error")
+            sv_set(lang + "startdatetime", datetime.now(cp.paris_tz).strftime("%Y-%m-%d %H:%M:%S"),
+                   f"{lang}wiki snapshot ingest start")
+        done = parse_ranges(sv_get(lang + "chunksdone"))
+        args.lang = lang
+        started, total, max_rss_mb, processed = time.time(), Stats(), 0, 0
+        print(f"{lang}: snapshot {date}, {len(available)} chunks, {len(done)} already done")
+        for attempt in (1, 2):
+            todo = [i for i in range(len(available)) if i not in done]
+            if not todo:
+                break
+            if attempt == 2:
+                print(f"{lang}: retrying {len(todo)} chunk(s) in error: {chunk_ranges(todo)}")
+            for idx in todo:
+                sv_set("status", f"{lang} chunk {idx} ({len(done)}/{len(available)} done)", "snapshot ingest progress")
+                stats, _ = run_one_chunk(args, wme, ident, available[idx], targets, 0, ctx)
+                processed += 1
+                max_rss_mb = max(max_rss_mb, stats.pop("max_rss_mb", 0))
+                for k, v in stats.items():
+                    total.add(k, v)
+                if not stats.get("chunk_errors"):
+                    done.add(idx)
+                    sv_set(lang + "chunksdone", chunk_ranges(done), f"{lang}wiki snapshot chunks ingested without error")
+        print_total(total, started, processed, max_rss_mb)
+        if len(done) == len(available):
+            sv_set(lang + "snapshotdone", date, f"{lang}wiki snapshot last ingested whole (date_modified)")
+            sv_set(lang + "enddatetime", datetime.now(cp.paris_tz).strftime("%Y-%m-%d %H:%M:%S"),
+                   f"{lang}wiki snapshot ingest end")
+            print(f"{lang}: snapshot {date} ingested whole")
+        else:
+            complete = False
+            print(f"{lang}: {len(available) - len(done)} chunk(s) still in error, left for the next run")
+    sv_set("status", "idle" if complete else "incomplete, resumes at the next check", "snapshot ingest progress")
+    return complete
+
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
+    ap.add_argument("--lang", choices=["en", "fr"])
+    ap.add_argument("--chunks", help="chunk indexes: 0, 0-4, 0,7,12-14")
+    ap.add_argument("--write", action="store_true", help="persist the pages (default: dry run)")
+    ap.add_argument("--families", default="", help="comma-separated families (default: all)")
+    ap.add_argument("--limit", type=int, default=0, help="stop after N target pages (0: no cap)")
+    ap.add_argument("--title-map", default="", help="directory for the per-chunk title to Qid maps")
+    ap.add_argument("--check", action="store_true", help="exit 0 if a snapshot waits, 1 if not, 2 if unknown")
+    ap.add_argument("--auto", action="store_true", help="ingest every language's latest snapshot, resumed")
+    ap.add_argument("--mark-complete", choices=["en", "fr"], help="record LANG's snapshot as ingested whole")
+    args = ap.parse_args()
+    if not (args.check or args.auto or args.mark_complete) and not (args.lang and args.chunks):
+        ap.error("--lang and --chunks are required, unless --check, --auto or --mark-complete")
+
+    if args.check:
+        # Any failure must read "cannot tell" (2): an uncaught error exits 1, which the cron
+        # script would take for "nothing to do".
+        try:
+            code = check(Enterprise())
+        except BaseException as err:
+            print(f"check failed: {err!r}")
+            code = 2
+        sys.exit(code)
+    wme = Enterprise()
+    if args.mark_complete:
+        mark_complete(wme, args.mark_complete)
+        return
+
+    families = {f for f in args.families.split(",") if f}
+    started = time.time()
+    # 1.1.11: one forked child per chunk. Batch 2 of frwiki was killed by the kernel's OOM killer
+    # in its 32nd chunk with 21 GB resident: memory grew from chunk to chunk. A child returns all
+    # of it when it exits, whatever the cause, and inherits the target map without reloading it.
+    ctx = mp.get_context("fork") if "fork" in mp.get_all_start_methods() else None
+
+    if args.auto:
+        print(f"wikipedia_dump_ingest --auto {','.join(AUTO_LANGS)} "
+              f"{datetime.now(cp.paris_tz).strftime('%Y-%m-%d %H:%M:%S')}")
+        targets = load_targets(families)
+        print(f"targets: {len(targets)} Qids")
+        complete = run_auto(args, wme, targets, ctx)
+        if complete and os.path.exists(INGEST_FLAG):
+            os.remove(INGEST_FLAG)            # lets wikipedia-crawler.sh start the crawler again
+            print(f"{INGEST_FLAG} removed: the crawler may start again")
+        print(f"--auto finished ({time.time() - started:.0f}s): {'complete' if complete else 'incomplete'}")
+        sys.exit(0 if complete else 1)
+
+    lang = args.lang
+    ident = f"{lang}wiki_namespace_0"
+    print(f"wikipedia_dump_ingest {ident} chunks {args.chunks} "
+          f"{'WRITE' if args.write else 'dry run (nothing written)'} "
+          f"{datetime.now(cp.paris_tz).strftime('%Y-%m-%d %H:%M:%S')}")
+    meta = wme.snapshot(ident)
+    available = snapshot_chunks(meta)
+    print(f"snapshot {ident}: modified {meta.get('date_modified')}, {len(available)} chunks")
+    chunks = parse_chunks(args.chunks, available)
+
+    targets = load_targets(families)
+    print(f"targets: {len(targets)} Qids")
+
+    total = Stats()
+    max_rss_mb = 0
+    for idx in chunks:
+        limit_left = args.limit - total.get("targets", 0) if args.limit else 0
+        stats, stop = run_one_chunk(args, wme, ident, available[idx], targets, limit_left, ctx)
+        max_rss_mb = max(max_rss_mb, stats.pop("max_rss_mb", 0))
+        for k, v in stats.items():
+            total.add(k, v)
+        if stop:
+            print(f"--limit {args.limit} reached")
+            break
+    print_total(total, started, len(chunks), max_rss_mb)
 
 
 def chunk_worker(pipe, args, wme, ident, chunk, targets, limit_left):

@@ -95,10 +95,12 @@ Keep Markdown, prompt files, JSON config, and logs UTF-8. These files contain no
 
 This crawler is built and run as a Docker container via the repo's root `Dockerfile`. The image is based on `python:3.10.5-slim-buster`, uses `WORKDIR /home/debian/docker/wikipedia-crawler`, installs `requirements.txt`, and runs `python wikipedia_crawler.py` as its `CMD` (note the source tree is mounted/copied at deploy time rather than via a `COPY . /app/` line, which is commented out). Pass database credentials at runtime (e.g. `docker run --env-file ...`); do not bake secrets into the image.
 
+**Snapshot ingest (WIKIPEDIA-CRAWLER-024/025).** `wikipedia_dump_ingest.py` backfills from the monthly Wikimedia Enterprise snapshots (README, section "Backfill from the Wikimedia Enterprise snapshots"). `run-if-new-snapshot.sh`, in a daily cron, runs `--check` and starts `--auto` detached (`docker run -d --name wikipedia-dump-ingest`); state in `T_WC_SERVER_VARIABLE` under `strwikipediadumpingest*`. While `dumpdata/INGEST_IN_PROGRESS` exists or that container runs, `wikipedia-crawler.sh` does not start the crawler: both write the same rows. Never delete the flag by hand during a run. Each chunk runs in a forked child (1.1.11, after an OOM kill at 21 GB), so test changes to the chunk loop under Linux: Windows has no fork and runs the chunks inline.
+
 ---
 
-**Last Updated**: 2026-10-17
-**Current Version**: 1.1.11 
+**Last Updated**: 2026-10-18
+**Current Version**: 1.1.12 
 
 ## Backlog (Nestor second-brain)
 
