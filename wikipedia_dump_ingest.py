@@ -287,6 +287,25 @@ def print_total(total, started, nchunks, max_rss_mb):
 AUTO_LANGS = [x for x in (os.getenv("WME_INGEST_LANGS") or "fr,en").split(",") if x]
 SV = "strwikipediadumpingest"
 INGEST_FLAG = os.path.join("dumpdata", "INGEST_IN_PROGRESS")
+# 1.1.15: the ingest of 2026-10-19/20 filled the disk (enwiki chunk 365 of 435) and MariaDB
+# crashed with a corrupted page. The chunks are streamed, never stored: what grows is the
+# database (Wikipedia tables, InnoDB undo), on the same filesystem as this directory. Below
+# this many free GB, no new chunk starts; the run stops as incomplete and resumes later.
+MIN_FREE_GB = float(os.getenv("WME_INGEST_MIN_FREE_GB") or 40)
+
+
+def free_gb(path="."):
+    st = os.statvfs(path)
+    return st.f_bavail * st.f_frsize / 1024 ** 3
+
+
+def disk_too_full():
+    """True, with a message, when the filesystem holding the database is below MIN_FREE_GB."""
+    gb = free_gb()
+    if gb >= MIN_FREE_GB:
+        return False
+    print(f"disk guard: {gb:.1f} GB free, below WME_INGEST_MIN_FREE_GB={MIN_FREE_GB:g}: no new chunk started")
+    return True
 
 
 def sv_get(name):
@@ -343,7 +362,11 @@ def run_auto(args, wme, targets, ctx):
     args.title_map = args.title_map or "dumpdata"
     args.limit = 0
     complete = True
+    disk_full = False
     for lang in AUTO_LANGS:
+        if disk_full:
+            complete = False
+            break
         ident = f"{lang}wiki_namespace_0"
         meta = wme.snapshot(ident)
         date, available = meta.get("date_modified") or "", snapshot_chunks(meta)
@@ -365,11 +388,14 @@ def run_auto(args, wme, targets, ctx):
         print(f"{lang}: snapshot {date}, {len(available)} chunks, {len(done)} already done")
         for attempt in (1, 2):
             todo = [i for i in range(len(available)) if i not in done]
-            if not todo:
+            if not todo or disk_full:
                 break
             if attempt == 2:
                 print(f"{lang}: retrying {len(todo)} chunk(s) in error: {chunk_ranges(todo)}")
             for idx in todo:
+                if disk_too_full():
+                    disk_full = True
+                    break
                 sv_set("status", f"{lang} chunk {idx} ({len(done)}/{len(available)} done)", "snapshot ingest progress")
                 stats, _ = run_one_chunk(args, wme, ident, available[idx], targets, 0, ctx)
                 processed += 1
@@ -388,7 +414,11 @@ def run_auto(args, wme, targets, ctx):
         else:
             complete = False
             print(f"{lang}: {len(available) - len(done)} chunk(s) still in error, left for the next run")
-    sv_set("status", "idle" if complete else "incomplete, resumes at the next check", "snapshot ingest progress")
+    if disk_full:
+        sv_set("status", f"stopped by the disk guard ({free_gb():.0f} GB free), resumes at the next check",
+               "snapshot ingest progress")
+    else:
+        sv_set("status", "idle" if complete else "incomplete, resumes at the next check", "snapshot ingest progress")
     return complete
 
 
@@ -456,6 +486,8 @@ def main():
     total = Stats()
     max_rss_mb = 0
     for idx in chunks:
+        if args.write and disk_too_full():
+            break
         limit_left = args.limit - total.get("targets", 0) if args.limit else 0
         stats, stop = run_one_chunk(args, wme, ident, available[idx], targets, limit_left, ctx)
         max_rss_mb = max(max_rss_mb, stats.pop("max_rss_mb", 0))

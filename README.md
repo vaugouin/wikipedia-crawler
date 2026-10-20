@@ -662,6 +662,8 @@ Since 1.1.11 each chunk runs in its own forked process, which gives its memory b
 | `strwikipediadumpingest<lang>startdatetime`, `...enddatetime` | start and end of that snapshot's ingest (Paris time) |
 | `strwikipediadumpingeststatus` | the chunk in progress, or `idle` |
 
+**Disk guard (1.1.15).** Before each chunk, `--auto` and `--write` runs check the free space of the filesystem that holds this directory, which is also the database's on the VPS. Below `WME_INGEST_MIN_FREE_GB` (default 40) no new chunk starts: the run ends as incomplete, the status reads `stopped by the disk guard`, and the next check resumes at the first chunk not done. The chunks themselves are streamed and never stored; what grows is the database. On 2026-10-19/20 the ingest of 515 chunks wrote about 70 GB of Wikipedia tables and pushed the InnoDB undo files to 42 GB, the disk filled up at enwiki chunk 365 and MariaDB crashed with a corrupted page.
+
 A chunk in error is retried once at the end of its language. A run that dies resumes at the next daily check with the chunks not done, and the crawler stays stopped meanwhile. When every language is whole, `--auto` deletes `dumpdata/INGEST_IN_PROGRESS` and the crawler's own cron starts the crawler again: `wikipedia-crawler.sh` refuses to start it while the flag exists or a `wikipedia-dump-ingest` container runs.
 
 `--check` calls the Enterprise API only when a language's last whole snapshot is older than the current month: snapshots come out on the 1st, so the API is asked a few times a month at most. Snapshots ingested by hand-run batches are recorded with `./wikipedia-dump-ingest.sh --mark-complete fr`. The title maps keep one file per chunk name, so a new snapshot overwrites the previous month's.

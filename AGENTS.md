@@ -97,10 +97,12 @@ This crawler is built and run as a Docker container via the repo's root `Dockerf
 
 **Snapshot ingest (WIKIPEDIA-CRAWLER-024/025).** `wikipedia_dump_ingest.py` backfills from the monthly Wikimedia Enterprise snapshots (README, section "Backfill from the Wikimedia Enterprise snapshots"). `run-if-new-snapshot.sh`, in a daily cron, runs `--check` and starts `--auto` detached (`docker run -d --name wikipedia-dump-ingest`); state in `T_WC_SERVER_VARIABLE` under `strwikipediadumpingest*`. While `dumpdata/INGEST_IN_PROGRESS` exists or that container runs, `wikipedia-crawler.sh` does not start the crawler: both write the same rows. Never delete the flag by hand during a run. Each chunk runs in a forked child (1.1.11, after an OOM kill at 21 GB), so test changes to the chunk loop under Linux: Windows has no fork and runs the chunks inline.
 
+**Disk (1.1.15).** The chunks are streamed, never stored, but a full snapshot grows the database by tens of GB (Wikipedia tables, InnoDB undo) on the same filesystem: the ingest filled the VPS disk on 2026-10-20 and MariaDB crashed with a corrupted page. Before each chunk the ingest checks the free space and stops below `WME_INGEST_MIN_FREE_GB` (default 40); never remove that guard, and measure with `doc/sql/check-table-sizes.sql` before and after a batch.
+
 ---
 
-**Last Updated**: 2026-10-18
-**Current Version**: 1.1.14 
+**Last Updated**: 2026-10-20
+**Current Version**: 1.1.15 
 
 ## Backlog (Nestor second-brain)
 
