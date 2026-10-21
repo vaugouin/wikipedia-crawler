@@ -1,0 +1,138 @@
+-- check-crawler-progress.sql
+-- run on vaugouindb (container damp-vaugouin-com-mariadb-1) at 2026-10-21 07:42:28 +0200
+--
++---------------------+---------------------+
+| NOW_                | UTC_NOW             |
++---------------------+---------------------+
+| 2026-10-21 07:42:28 | 2026-10-21 05:42:28 |
++---------------------+---------------------+
++------------------------------------------------+--------------------------------------------------------------+---------------------+
+| VAR_NAME                                       | VAR_VALUE                                                    | TIM_UPDATED         |
++------------------------------------------------+--------------------------------------------------------------+---------------------+
+| strwikipediacrawlerkeywordfrenchcount          | 3078                                                         | 2026-10-21 07:42:09 |
+| strwikipediacrawlerkeywordid                   | 247705                                                       | 2026-10-21 07:42:09 |
+| strwikipediacrawlerkeywordwikidataid           | Q1521353                                                     | 2026-10-21 07:42:09 |
+| strwikipediacrawlerkeywordenglishcount         | 5713                                                         | 2026-10-21 07:42:08 |
+| strwikipediacrawlercurrentcontent              | keyword                                                      | 2026-10-21 04:36:21 |
+| strwikipediacrawlercurrentprocess              | 221: processing Wikipedia English and French keyword content | 2026-10-21 04:36:21 |
+| strwikipediacrawlerepisodeenddatetime          | 2026-10-21 04:36:21                                          | 2026-10-21 04:36:21 |
+| strwikipediacrawlerepisodeenglishcount         | 1650                                                         | 2026-10-21 04:36:21 |
+| strwikipediacrawlerepisodefrenchcount          | 204                                                          | 2026-10-21 04:36:21 |
+| strwikipediacrawlerepisodeid                   |                                                              | 2026-10-21 04:36:21 |
+| strwikipediacrawlerepisodewikidataid           | Q141750607                                                   | 2026-10-21 04:36:21 |
+| strwikipediacrawlerkeywordstartdatetime        | 2026-10-21 04:36:21                                          | 2026-10-21 04:36:21 |
+| strwikipediacrawlerprocessesexecuted           | 217, 223, 218, 219, 220, 221,                                | 2026-10-21 04:36:21 |
+| strwikipediacrawlercharacterenddatetime        | 2026-10-21 04:05:03                                          | 2026-10-21 04:05:03 |
+| strwikipediacrawlercharacterid                 |                                                              | 2026-10-21 04:05:03 |
+| strwikipediacrawlercharacterstartdatetime      | 2026-10-21 04:05:03                                          | 2026-10-21 04:05:03 |
+| strwikipediacrawlerepisodestartdatetime        | 2026-10-21 04:05:03                                          | 2026-10-21 04:05:03 |
+| strwikipediacrawlertechnicalid                 |                                                              | 2026-10-21 04:05:03 |
+| strwikipediacrawlertmdbcollectionenddatetime   | 2026-10-21 04:05:03                                          | 2026-10-21 04:05:03 |
+| strwikipediacrawlertmdbcollectionid            |                                                              | 2026-10-21 04:05:03 |
+| strwikipediacrawlertmdbcollectionstartdatetime | 2026-10-21 04:05:03                                          | 2026-10-21 04:05:03 |
+| strwikipediacrawlertechnicalenddatetime        | 2026-10-21 04:05:02                                          | 2026-10-21 04:05:02 |
+| strwikipediacrawlertechnicalenglishcount       | 23                                                           | 2026-10-21 04:05:02 |
+| strwikipediacrawlertechnicalwikidataid         | Q7847231                                                     | 2026-10-21 04:05:02 |
+| strwikipediacrawlertechnicalfrenchcount        | 15                                                           | 2026-10-21 04:05:01 |
+| strwikipediacrawlertechnicalstartdatetime      | 2026-10-21 04:04:03                                          | 2026-10-21 04:04:03 |
+| strwikipediacrawlertopicenddatetime            | 2026-10-21 04:04:03                                          | 2026-10-21 04:04:03 |
+| strwikipediacrawlertopicenglishcount           | 609                                                          | 2026-10-21 04:04:03 |
+| strwikipediacrawlertopicid                     |                                                              | 2026-10-21 04:04:03 |
+| strwikipediacrawlertopicwikidataid             | Q99521056                                                    | 2026-10-21 04:04:03 |
+| strwikipediacrawlertopicfrenchcount            | 14                                                           | 2026-10-21 04:03:21 |
+| strwikipediacrawlerprocessesexecutedprevious   | 215, 216, 217,                                               | 2026-10-21 03:50:06 |
+| strwikipediacrawlerstartdatetime               | 2026-10-21 03:50:06                                          | 2026-10-21 03:50:06 |
+| strwikipediacrawlertopicstartdatetime          | 2026-10-21 03:50:06                                          | 2026-10-21 03:50:06 |
+| strwikipediacrawlertotalruntime                | RUNNING                                                      | 2026-10-21 03:50:06 |
+| strwikipediacrawlertotalruntimeprevious        | RUNNING                                                      | 2026-10-21 03:50:06 |
+| strwikipediadumpingestenchunksdone             | 0-434                                                        | 2026-10-21 03:47:35 |
+| strwikipediadumpingestenenddatetime            | 2026-10-21 03:47:35                                          | 2026-10-21 03:47:35 |
+| strwikipediadumpingestensnapshotdone           | 2026-10-01T01:17:10.982940484Z                               | 2026-10-21 03:47:35 |
+| strwikipediadumpingeststatus                   | idle                                                         | 2026-10-21 03:47:35 |
+| strwikipediadumpingestensnapshotcurrent        | 2026-10-01T01:17:10.982940484Z                               | 2026-10-19 07:34:07 |
+| strwikipediadumpingestenstartdatetime          | 2026-10-19 07:34:07                                          | 2026-10-19 07:34:07 |
+| strwikipediadumpingestfrchunksdone             | 0-149                                                        | 2026-10-19 07:29:37 |
+| strwikipediadumpingestfrsnapshotcurrent        | 2026-10-01T01:18:30.587463225Z                               | 2026-10-19 07:29:37 |
+| strwikipediadumpingestfrsnapshotdone           | 2026-10-01T01:18:30.587463225Z                               | 2026-10-19 07:29:37 |
+| strwikipediacrawlernominationenddatetime       | 2026-10-17 16:08:09                                          | 2026-10-17 16:08:09 |
+| strwikipediacrawlernominationfrenchcount       | 4                                                            | 2026-10-17 16:08:09 |
+| strwikipediacrawlernominationid                |                                                              | 2026-10-17 16:08:09 |
+| strwikipediacrawlernominationwikidataid        | Q97276214                                                    | 2026-10-17 16:08:09 |
+| strwikipediacrawlernominationenglishcount      | 2                                                            | 2026-10-17 16:08:07 |
+| strwikipediacrawlerawardenddatetime            | 2026-10-17 16:08:05                                          | 2026-10-17 16:08:05 |
+| strwikipediacrawlerawardid                     |                                                              | 2026-10-17 16:08:05 |
+| strwikipediacrawlerawardwikidataid             | Q99519077                                                    | 2026-10-17 16:08:05 |
+| strwikipediacrawlernominationstartdatetime     | 2026-10-17 16:08:05                                          | 2026-10-17 16:08:05 |
+| strwikipediacrawlerawardenglishcount           | 29                                                           | 2026-10-17 16:08:04 |
+| strwikipediacrawlerawardfrenchcount            | 46                                                           | 2026-10-17 16:08:04 |
+| strwikipediacrawlerawardstartdatetime          | 2026-10-17 16:06:05                                          | 2026-10-17 16:06:05 |
+| strwikipediacrawlerdeathid                     |                                                              | 2026-10-17 15:59:21 |
+| strwikipediacrawlerdeathenddatetime            | 2026-10-17 15:59:20                                          | 2026-10-17 15:59:20 |
+| strwikipediacrawlerdeathstartdatetime          | 2026-10-17 15:59:20                                          | 2026-10-17 15:59:20 |
+| strwikipediacrawlergroupenddatetime            | 2026-10-17 15:59:20                                          | 2026-10-17 15:59:20 |
+| strwikipediacrawlergroupenglishcount           | 20                                                           | 2026-10-17 15:59:20 |
+| strwikipediacrawlergroupfrenchcount            | 34                                                           | 2026-10-17 15:59:20 |
+| strwikipediacrawlergroupid                     |                                                              | 2026-10-17 15:59:20 |
+| strwikipediacrawlergroupwikidataid             | Q98843264                                                    | 2026-10-17 15:59:20 |
+| strwikipediacrawlercollectionenddatetime       | 2026-10-17 15:58:04                                          | 2026-10-17 15:58:04 |
+| strwikipediacrawlercollectionenglishcount      | 1                                                            | 2026-10-17 15:58:04 |
+| strwikipediacrawlercollectionfrenchcount       | 1                                                            | 2026-10-17 15:58:04 |
+| strwikipediacrawlercollectionid                |                                                              | 2026-10-17 15:58:04 |
+| strwikipediacrawlercollectionwikidataid        | Q99869881                                                    | 2026-10-17 15:58:04 |
+| strwikipediacrawlergroupstartdatetime          | 2026-10-17 15:58:04                                          | 2026-10-17 15:58:04 |
+| strwikipediacrawlercollectionstartdatetime     | 2026-10-17 15:58:03                                          | 2026-10-17 15:58:03 |
+| strwikipediacrawlerlistenddatetime             | 2026-10-17 15:58:02                                          | 2026-10-17 15:58:02 |
+| strwikipediacrawlerlistid                      |                                                              | 2026-10-17 15:58:02 |
+| strwikipediacrawlerliststartdatetime           | 2026-10-17 15:58:02                                          | 2026-10-17 15:58:02 |
+| strwikipediacrawlerlistwikidataid              | Q1954551                                                     | 2026-10-17 15:58:02 |
+| strwikipediacrawlermovementenddatetime         | 2026-10-17 15:58:02                                          | 2026-10-17 15:58:02 |
+| strwikipediacrawlermovementid                  |                                                              | 2026-10-17 15:58:02 |
+| strwikipediacrawlermovementstartdatetime       | 2026-10-17 15:58:02                                          | 2026-10-17 15:58:02 |
+| strwikipediacrawlerotherenddatetime            | 2026-10-17 15:58:02                                          | 2026-10-17 15:58:02 |
+| strwikipediacrawlerotherid                     |                                                              | 2026-10-17 15:58:02 |
+| strwikipediacrawlerotherstartdatetime          | 2026-10-17 15:58:02                                          | 2026-10-17 15:58:02 |
+| strwikipediacrawlerserieenddatetime            | 2026-10-17 15:58:02                                          | 2026-10-17 15:58:02 |
+| strwikipediacrawlerserieenglishcount           | 328                                                          | 2026-10-17 15:58:02 |
+| strwikipediacrawlerseriefrenchcount            | 57                                                           | 2026-10-17 15:58:02 |
+| strwikipediacrawlerserieid                     |                                                              | 2026-10-17 15:58:02 |
+| strwikipediacrawlerseriewikidataid             | Q81699313                                                    | 2026-10-17 15:58:02 |
+| strwikipediacrawlerseriestartdatetime          | 2026-10-17 15:48:45                                          | 2026-10-17 15:48:45 |
+| strwikipediacrawleritemenddatetime             | 2026-10-16 20:13:02                                          | 2026-10-16 20:13:02 |
+| strwikipediacrawleritemenglishcount            | 17765                                                        | 2026-10-16 20:13:02 |
+| strwikipediacrawleritemfrenchcount             | 12780                                                        | 2026-10-16 20:13:02 |
+| strwikipediacrawleritemid                      |                                                              | 2026-10-16 20:13:02 |
+| strwikipediacrawleritemwikidataid              | Q99999126                                                    | 2026-10-16 20:13:02 |
+| strwikipediacrawleritemstartdatetime           | 2026-10-16 07:05:15                                          | 2026-10-16 07:05:15 |
+| strwikipediacrawlerpersonenddatetime           | 2026-10-07 16:24:01                                          | 2026-10-07 16:24:01 |
+| strwikipediacrawlerpersonenglishcount          | 171349                                                       | 2026-10-07 16:24:01 |
+| strwikipediacrawlerpersonfrenchcount           | 99377                                                        | 2026-10-07 16:24:01 |
+| strwikipediacrawlerpersonid                    |                                                              | 2026-10-07 16:24:01 |
+| strwikipediacrawlerpersonwikidataid            | Q141593445                                                   | 2026-10-07 16:24:01 |
+| strwikipediacrawlermovieenddatetime            | 2026-10-04 00:42:06                                          | 2026-10-04 00:42:06 |
+| strwikipediacrawlermovieenglishcount           | 4805                                                         | 2026-10-04 00:42:06 |
+| strwikipediacrawlermovieid                     |                                                              | 2026-10-04 00:42:06 |
+| strwikipediacrawlermoviewikidataid             | Q141624648                                                   | 2026-10-04 00:42:06 |
+| strwikipediacrawlerpersonstartdatetime         | 2026-10-04 00:42:06                                          | 2026-10-04 00:42:06 |
+| strwikipediacrawlermoviefrenchcount            | 1008                                                         | 2026-10-04 00:42:04 |
+| strwikipediacrawlermoviestartdatetime          | 2026-10-03 22:50:06                                          | 2026-10-03 22:50:06 |
+| strwikipediacrawlerenddatetime                 | 2026-09-30 02:28:02                                          | 2026-09-30 02:28:02 |
+| strwikipediacrawlerseasonenddatetime           | 2026-09-30 02:28:02                                          | 2026-09-30 02:28:02 |
+| strwikipediacrawlerseasonenglishcount          | 72                                                           | 2026-09-30 02:28:02 |
+| strwikipediacrawlerseasonfrenchcount           | 36                                                           | 2026-09-30 02:28:02 |
+| strwikipediacrawlerseasonid                    |                                                              | 2026-09-30 02:28:02 |
+| strwikipediacrawlerseasonwikidataid            | Q115797382                                                   | 2026-09-30 02:28:02 |
+| strwikipediacrawlertotalruntimesecond          | 75477                                                        | 2026-09-30 02:28:02 |
+| strwikipediacrawlerkeywordenddatetime          | 2026-09-30 02:26:12                                          | 2026-09-30 02:26:12 |
+| strwikipediacrawlerseasonstartdatetime         | 2026-09-30 02:26:12                                          | 2026-09-30 02:26:12 |
+| strwikipediacrawlermovementenglishcount        | 1                                                            | 2026-07-12 01:29:20 |
+| strwikipediacrawlermovementfrenchcount         | 1                                                            | 2026-07-12 01:29:20 |
+| strwikipediacrawlermovementwikidataid          | Q1474763                                                     | 2026-07-12 01:29:20 |
+| strwikipediacrawlerlistenglishcount            | 6                                                            | 2026-06-02 04:52:07 |
+| strwikipediacrawlerlistfrenchcount             | 1                                                            | 2026-06-02 04:52:07 |
+| strwikipediacrawlerdeathwikidataid             | Q110493745                                                   | 2026-05-28 18:45:58 |
+| strwikipediacrawlerdeathfrenchcount            | 1                                                            | 2026-05-28 18:32:00 |
+| strwikipediacrawlerdeathenglishcount           | 1                                                            | 2026-05-28 18:31:57 |
+| strwikipediacrawlerotherfrenchcount            | 19                                                           | 2026-04-14 16:06:42 |
+| strwikipediacrawlerotherwikidataid             | Q960640                                                      | 2026-04-14 16:06:42 |
+| strwikipediacrawlerotherenglishcount           | 31                                                           | 2026-04-14 16:06:41 |
++------------------------------------------------+--------------------------------------------------------------+---------------------+
