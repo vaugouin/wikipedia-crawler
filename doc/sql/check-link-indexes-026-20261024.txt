@@ -1,0 +1,24 @@
+-- check-link-indexes-026.sql
+-- run on vaugouindb (container damp-vaugouin-com-mariadb-1) at 2026-10-24 10:05:53 +0200
+--
++-------------------------------------------+------------+------------------------------------------------------+
+| INDEX_NAME                                | NON_UNIQUE | COLUMNS_                                             |
++-------------------------------------------+------------+------------------------------------------------------+
+| ITEM_TYPE                                 |          1 | ITEM_TYPE                                            |
+| LANG_TARGET_TITLE                         |          1 | LANG,TARGET_TITLE                                    |
+| PRIMARY                                   |          0 | ID_ROW                                               |
+| TARGET_LANG_SOURCE                        |          1 | TARGET_ID_WIKIDATA,LANG,ID_WIKIDATA                  |
+| TIM_UPDATED                               |          1 | TIM_UPDATED                                          |
+| UQ_ID_WIKIDATA_LANG_SECTION_DISPLAY_ORDER |          0 | ID_WIKIDATA,LANG,SECTION_DISPLAY_ORDER,DISPLAY_ORDER |
++-------------------------------------------+------------+------------------------------------------------------+
++------------------------------------+------------+---------+----------+---------+
+| TABLE_NAME                         | TABLE_ROWS | DATA_GB | INDEX_GB | FREE_GB |
++------------------------------------+------------+---------+----------+---------+
+| T_WC_WIKIPEDIA_PAGE_LANG_LINK      |  109186926 |    14.3 |     23.3 |     0.0 |
+| T_WC_WIKIPEDIA_PAGE_LANG_REFERENCE |   19009726 |     6.5 |      2.0 |     0.0 |
++------------------------------------+------------+---------+----------+---------+
++-------------+------------------+
+| DATABASE_GB | DATABASE_FREE_GB |
++-------------+------------------+
+|       245.8 |             48.2 |
++-------------+------------------+
