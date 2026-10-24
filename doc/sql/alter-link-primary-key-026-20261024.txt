@@ -1,0 +1,35 @@
+-- alter-link-primary-key-026.sql
+-- run on vaugouindb (container damp-vaugouin-com-mariadb-1) at 2026-10-24 15:59:58 +0200
+--
++---------+----------+---------+
+| DATA_GB | INDEX_GB | FREE_GB |
++---------+----------+---------+
+|    14.3 |     23.3 |     0.0 |
++---------+----------+---------+
++------------------------------------------+---------+----------+----------+
+| Table                                    | Op      | Msg_type | Msg_text |
++------------------------------------------+---------+----------+----------+
+| vaugouindb.T_WC_WIKIPEDIA_PAGE_LANG_LINK | analyze | status   | OK       |
++------------------------------------------+---------+----------+----------+
++-------------------------------+------------+--------------------+--------------+-----------------------+-----------+-------------+----------+--------+------+------------+---------+---------------+---------+
+| Table                         | Non_unique | Key_name           | Seq_in_index | Column_name           | Collation | Cardinality | Sub_part | Packed | Null | Index_type | Comment | Index_comment | Ignored |
++-------------------------------+------------+--------------------+--------------+-----------------------+-----------+-------------+----------+--------+------+------------+---------+---------------+---------+
+| T_WC_WIKIPEDIA_PAGE_LANG_LINK |          0 | PRIMARY            |            1 | ID_WIKIDATA           | A         |     1784686 |     NULL | NULL   |      | BTREE      |         |               | NO      |
+| T_WC_WIKIPEDIA_PAGE_LANG_LINK |          0 | PRIMARY            |            2 | LANG                  | A         |     2169618 |     NULL | NULL   |      | BTREE      |         |               | NO      |
+| T_WC_WIKIPEDIA_PAGE_LANG_LINK |          0 | PRIMARY            |            3 | SECTION_DISPLAY_ORDER | A         |    10059141 |     NULL | NULL   |      | BTREE      |         |               | NO      |
+| T_WC_WIKIPEDIA_PAGE_LANG_LINK |          0 | PRIMARY            |            4 | DISPLAY_ORDER         | A         |   110650560 |     NULL | NULL   |      | BTREE      |         |               | NO      |
+| T_WC_WIKIPEDIA_PAGE_LANG_LINK |          1 | TIM_UPDATED        |            1 | TIM_UPDATED           | A         |      269879 |     NULL | NULL   | YES  | BTREE      |         |               | NO      |
+| T_WC_WIKIPEDIA_PAGE_LANG_LINK |          1 | TARGET_LANG_SOURCE |            1 | TARGET_ID_WIKIDATA    | A         |     1784686 |     NULL | NULL   | YES  | BTREE      |         |               | NO      |
+| T_WC_WIKIPEDIA_PAGE_LANG_LINK |          1 | TARGET_LANG_SOURCE |            2 | LANG                  | A         |     2405446 |     NULL | NULL   |      | BTREE      |         |               | NO      |
+| T_WC_WIKIPEDIA_PAGE_LANG_LINK |          1 | TARGET_LANG_SOURCE |            3 | ID_WIKIDATA           | A         |    55325280 |     NULL | NULL   |      | BTREE      |         |               | NO      |
++-------------------------------+------------+--------------------+--------------+-----------------------+-----------+-------------+----------+--------+------+------------+---------+---------------+---------+
++---------+----------+---------+
+| DATA_GB | INDEX_GB | FREE_GB |
++---------+----------+---------+
+|    16.1 |      7.5 |     0.0 |
++---------+----------+---------+
++------+-------------+-------------------------------+------+---------------+---------+---------+-------------+------+-------------+
+| id   | select_type | table                         | type | possible_keys | key     | key_len | ref         | rows | Extra       |
++------+-------------+-------------------------------+------+---------------+---------+---------+-------------+------+-------------+
+|    1 | SIMPLE      | T_WC_WIKIPEDIA_PAGE_LANG_LINK | ref  | PRIMARY       | PRIMARY | 244     | const,const | 1    | Using where |
++------+-------------+-------------------------------+------+---------------+---------+---------+-------------+------+-------------+
