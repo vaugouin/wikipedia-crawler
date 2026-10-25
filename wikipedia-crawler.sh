@@ -1,5 +1,12 @@
 #!/bin/bash
 
+# Switched off by off.sh, back on with on.sh: the flag file CRON_OFF next to this script makes
+# every cron tick exit here. The script keeps its name, so the git clone stays clean.
+if [ -f "$(dirname "$(readlink -f "$0")")/CRON_OFF" ]; then
+    echo "CRON_OFF present: wikipedia-crawler switched off (bash on.sh to switch it back on)."
+    exit 0
+fi
+
 # WIKIPEDIA-CRAWLER-025: while the snapshot ingest runs (run-if-new-snapshot.sh writes the flag,
 # wikipedia_dump_ingest.py --auto deletes it once every snapshot is in), the crawler stays stopped:
 # both would upsert the same rows. A hand-run ingest container holds it back too.

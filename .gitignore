@@ -23,3 +23,6 @@ archive/
 
 # Wikimedia Enterprise snapshot ingest: run logs and title to Qid maps (wikipedia-dump-ingest.sh).
 /dumpdata/
+
+# Flag file written by off.sh, removed by on.sh: the scheduled task is switched off
+CRON_OFF
