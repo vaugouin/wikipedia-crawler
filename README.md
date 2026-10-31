@@ -68,6 +68,7 @@ The crawler processes multiple content types in sequence:
 - `award`
 - `nomination`
 - `topic`
+- `technical`
 - `character`
 - `tmdbcollection`
 - `episode`
@@ -104,7 +105,11 @@ Responsibilities:
 Contains extracted helper functions used by the crawler:
 
 - `get_linked_pages()`
+- `get_linked_pages_batch()` (up to 50 Qids per `wbgetentities` call, used by the crawler)
 - `extract_titles_and_text()`
+
+### `wikipedia_http.py`
+Shared HTTP session (urllib3 retries), the global Wikimedia rate limiter `rate_limit()` (`WIKIPEDIA_CRAWLER_MAX_RPS`, default 20, 0 disables it) and the fetch worker count `get_worker_count()` (`WIKIPEDIA_CRAWLER_WORKERS`, default 8).
 
 ### `wikipedia_content_md.py`
 Since 1.1.0 (topic `wikipedia-rich-sections` in the Nestor t2s-backlog, decisions of 2026-10-15). Turns the `action=parse` HTML into sections, links and references, network-free and database-free except its two resolvers:
@@ -161,10 +166,10 @@ Both are parallel-safe with a running crawler. See [Refreshing content on demand
 For each selected row:
 
 1. The crawler reads `ID_WIKIDATA` from the source table.
-2. It calls `get_linked_pages(wikidata_id, 'sitelinks', language)`.
+2. It calls `get_linked_pages_batch(ids, 'sitelinks', 'en|fr')` once per chunk of 50 rows.
 3. It looks up the page title in `entities[ID_WIKIDATA]['sitelinks'][<lang>wiki]['title']`.
 4. It stores page-level Wikipedia metadata in `T_WC_WIKIPEDIA_PAGE_LANG`, including the site key, page title, page URL, and page existence flag.
-5. If configured for that content type, it calls `wikipedia_images.get_wikipedia_main_image_url(page_title, language)` and, when a URL is found, stores it in the configured destination table/column using `cp.f_sqlupdatearray()`.
+5. If configured for that content type, it calls `wikipedia_images.get_wikipedia_main_image_url(page_title, language)` and, when a URL is found, stores it in the configured destination table/column using `cp.f_sqlupdatearray()` (update only since 1.1.4: skipped when that table has no row for the Qid yet), and in `T_WC_WIKIPEDIA_PAGE_LANG.MAIN_IMAGE_URL`.
 6. It calls `wikipedia_images.get_wikipedia_page_images(page_title, language)` to enumerate every image on the page and writes one row per image into `T_WC_WIKIPEDIA_PAGE_LANG_IMAGE`, flagging the one matching the main image URL with `IS_MAIN_IMAGE = 1`. Stale trailing rows beyond the new image count are deleted.
 7. It then calls the Wikipedia `parse` API to get rendered HTML.
 8. It updates `T_WC_WIKIPEDIA_PAGE_LANG` with page crawl status such as the last crawl timestamp, HTTP status, and last successful crawl timestamp.
@@ -192,7 +197,8 @@ The crawler currently associates image results with these destination tables/col
 - `award` -> `T_WC_WIKIDATA_ITEM_V1.WIKIPEDIA_IMAGE_PATH`
 - `nomination` -> `T_WC_WIKIDATA_ITEM_V1.WIKIPEDIA_IMAGE_PATH`
 - `topic` -> `T_WC_WIKIDATA_ITEM_V1.WIKIPEDIA_IMAGE_PATH`
-- `character` -> `T_WC_TMDB_CHARACTER.WIKIPEDIA_IMAGE_PATH`
+- `technical` -> `T_WC_T2S_TECHNICAL.WIKIPEDIA_IMAGE_PATH`
+- `character` -> `T_WC_WIKIDATA_CHARACTER_V1.WIKIPEDIA_PROFILE_PATH`
 - `sourcework` -> `T_WC_T2S_SOURCE_WORK.WIKIPEDIA_IMAGE_PATH` (the serving columns `WIKIPEDIA_MAIN_IMAGE_URL` / `_FR` are filled by process 71 of `tmdb-movie-preprocess` from `T_WC_WIKIPEDIA_PAGE_LANG.MAIN_IMAGE_URL`)
 
 The following content families still store full page-level image rows in `T_WC_WIKIPEDIA_PAGE_LANG_IMAGE`, but do not currently write the main image URL back into a source-table image column:
@@ -273,7 +279,7 @@ When configured, the main image URL is written back to a content-specific Wikida
 
 #### UI-chrome filtering (which image is allowed to be the main image)
 
-Wikipedia articles embed template decoration that is not the subject: edit pencils, maintenance banners, project logos, stub markers, featured-article stars. The crawler filters these out with `_UI_CHROME_PATTERNS` / `_is_ui_chrome_file` in `wikipedia_images.py`, at three points:
+Wikipedia articles embed template decoration that is not the subject: edit pencils, maintenance banners, project logos, stub markers, featured-article stars. The crawler filters these out with `_UI_CHROME_PATTERNS` / `_is_ui_chrome_file` in `wikipedia_images.py`, at two points:
 
 1. **Page-image enumeration** : chrome `File:` titles are dropped before the `imageinfo` step, so they never reach `T_WC_WIKIPEDIA_PAGE_LANG_IMAGE` (and it saves an API call per 50 files filtered).
 2. **Lead image** : the REST summary endpoint occasionally returns a maintenance banner as `originalimage`. `is_acceptable_main_image_url()` rejects it, and the column is then left untouched.
@@ -300,13 +306,17 @@ Titles are normalized (spaces to underscores) before matching, because the Actio
 
 Values written before the filter existed are cleaned by [`migrations/clear_ui_chrome_images.py`](migrations/clear_ui_chrome_images.py) (dry run by default, `--apply` to clear). Run it **after** deploying the code fix, otherwise a crawler still running the old code writes the chrome values straight back.
 
-For `item`, `other`, `list`, `movement`, `collection`, `group`, `death`, `award`, `nomination`, `topic`, and `technical`, the crawler writes to:
+For `item`, `other`, `list`, `movement`, `collection`, `group`, `death`, `award`, `nomination`, and `topic`, the crawler writes to:
 
 - `T_WC_WIKIDATA_ITEM_V1.WIKIPEDIA_IMAGE_PATH`
 
+For `technical`, the crawler writes to:
+
+- `T_WC_T2S_TECHNICAL.WIKIPEDIA_IMAGE_PATH`
+
 For `character`, the crawler writes to:
 
-- `T_WC_TMDB_CHARACTER.WIKIPEDIA_IMAGE_PATH`
+- `T_WC_WIKIDATA_CHARACTER_V1.WIKIPEDIA_PROFILE_PATH`
 
 For `tmdbcollection`, `episode`, `keyword`, and `season`, no source-table main image column is currently configured. These processes still populate:
 
@@ -577,7 +587,7 @@ Two effects to be aware of, neither harmful:
 
 ### Why both are parallel-safe
 
-The per-entity fetch/persist code is shared with the main crawler (extracted into [wikipedia_page_writer.py](wikipedia_page_writer.py)), but these paths write **no** resume-state or monitoring server variables (they call the shared writer with `blnwritecounters=False`). They therefore cannot advance or corrupt the main container's `strwikipediacrawler*` checkpoints. All page/section/image writes are keyed upserts on `(ID_WIKIDATA, LANG, DISPLAY_ORDER)`, so a refresh is idempotent. Run it against entities the main crawler is not simultaneously processing.
+The per-entity fetch/persist code is shared with the main crawler (extracted into [wikipedia_page_writer.py](wikipedia_page_writer.py)), but these paths write **no** resume-state or monitoring server variables (they call the shared writer with `blnwritecounters=False`). They therefore cannot advance or corrupt the main container's `strwikipediacrawler*` checkpoints. All page/section/image writes are keyed upserts (`(ID_WIKIDATA, LANG)` for the page row, plus `DISPLAY_ORDER` for sections and images), so a refresh is idempotent. Run it against entities the main crawler is not simultaneously processing.
 
 One shared resource is worth a thought: the Wikimedia rate limiter (`WIKIPEDIA_CRAWLER_MAX_RPS`, default 20) is **per process**, so two containers at the default add up to ~40 rps. Pass a lower cap to the manual container to stay polite — see below.
 
@@ -715,7 +725,9 @@ The script reads a Wikimedia user agent from an environment variable:
 
 - `WIKIMEDIA_USER_AGENT`
 
-Both `wikipedia_images.py` and `wikipedia_crawler_helpers.py` fall back to a static default string when the variable is unset, so the crawler will still run, but Wikimedia's policy asks for an identifying contact in the UA, so setting this is recommended (especially in containerized deployments where `.env` may not be mounted).
+`wikipedia_images.py`, `wikipedia_crawler_helpers.py` and `wikipedia_http.py` fall back to a static default string when the variable is unset, so the crawler will still run, but Wikimedia's policy asks for an identifying contact in the UA, so setting this is recommended (especially in containerized deployments where `.env` may not be mounted).
+
+Other variables (see [.env.example](.env.example)): `WIKIPEDIA_CRAWLER_WORKERS` (default 8) and `WIKIPEDIA_CRAWLER_MAX_RPS` (default 20) in `wikipedia_http.py`; `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`, `DB_NAMESPACE` and `USER_TIMEZONE` in `citizenphil.py`; `WME_USERNAME`, `WME_PASSWORD`, `WME_INGEST_LANGS` and `WME_INGEST_MIN_FREE_GB` for the snapshot ingest (not in `.env.example`).
 
 It also depends on database connection utilities and helper functions defined in `citizenphil.py`.
 
@@ -735,6 +747,8 @@ docker run -d --rm --network="host" \
   -v $(pwd):/home/debian/docker/wikipedia-crawler \
   --name wikipedia-crawler wikipedia-crawler-python-app
 ```
+
+`wikipedia-crawler.sh` exits without starting anything while the flag file `CRON_OFF` sits next to it: `off.sh` writes it, `on.sh` removes it (a container already running is not stopped).
 
 To run an interactive container manually with the same secret-handling, mirror the same flag:
 
