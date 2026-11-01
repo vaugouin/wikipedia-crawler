@@ -43,8 +43,8 @@ One stage of **Agent BBB** (GitHub `vaugouin`; siblings at `%USERPROFILE%/Code/<
 
 ---
 
-**Last Updated**: 2026-10-31
-**Current Version**: 1.1.34 
+**Last Updated**: 2026-11-01
+**Current Version**: 1.1.35 
 
 ## Backlog (Nestor second-brain)
 

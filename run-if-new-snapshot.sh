@@ -6,6 +6,9 @@
 # =============================================================================
 #
 # WHAT IT DOES, in this order:
+#   0. exits at once while the flag file CRON_OFF sits next to it (off.sh / off-all.sh write
+#      it, on.sh removes it): the same switch as wikipedia-crawler.sh, so one off.sh silences
+#      both the crawler and the snapshot ingest. A container already running is not stopped;
 #   1. a flock: one execution at a time;
 #   2. if the wikipedia-dump-ingest container runs, exit at once;
 #   3. asks `wikipedia_dump_ingest.py --check` in a throwaway container:
@@ -53,6 +56,12 @@ LOCK=/tmp/run-if-new-snapshot.lock
 
 DRY_RUN=0
 [ "${1:-}" = "--dry-run" ] && DRY_RUN=1
+
+# Switched off by off.sh (or off-all.sh), back on with on.sh: same flag as wikipedia-crawler.sh.
+if [ -f "$STACK/CRON_OFF" ]; then
+  echo "$(date -u '+%Y-%m-%d %H:%M:%S UTC'): CRON_OFF present ($(cat "$STACK/CRON_OFF" 2>/dev/null)): snapshot ingest switched off (bash on.sh to switch it back on)."
+  exit 0
+fi
 
 cd "$STACK" || { echo "ERROR: $STACK not found."; exit 2; }
 mkdir -p dumpdata

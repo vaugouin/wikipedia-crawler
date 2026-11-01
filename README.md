@@ -658,7 +658,7 @@ Since 1.1.11 each chunk runs in its own forked process, which gives its memory b
 
 `run-if-new-snapshot.sh`, in cron once a day, does the whole thing without a command line per batch, on the model of `wikidata-crawler/run-if-new-dump.sh`:
 
-1. a `flock`, and an immediate exit while the `wikipedia-dump-ingest` container runs;
+1. an immediate exit while the flag file `CRON_OFF` exists (1.1.35: the same `off.sh` / `on.sh` switch as the crawler), a `flock`, and an immediate exit while the `wikipedia-dump-ingest` container runs;
 2. `wikipedia_dump_ingest.py --check` in a throwaway container: exit 0 when a snapshot waits (a new one, or a run left unfinished), 1 when every snapshot is in, 2 when it cannot tell (any failure reads 2, never 1);
 3. on 0, it writes `dumpdata/INGEST_IN_PROGRESS`, stops the `wikipedia-crawler` container and starts `wikipedia_dump_ingest.py --auto --title-map dumpdata` with `docker run -d`. No `nohup`, no terminal: follow it with `docker logs -f wikipedia-dump-ingest` or `dumpdata/ingest-auto-<date>-<time>.log`.
 
@@ -748,7 +748,7 @@ docker run -d --rm --network="host" \
   --name wikipedia-crawler wikipedia-crawler-python-app
 ```
 
-`wikipedia-crawler.sh` exits without starting anything while the flag file `CRON_OFF` sits next to it: `off.sh` writes it, `on.sh` removes it (a container already running is not stopped).
+`wikipedia-crawler.sh` and, since 1.1.35, `run-if-new-snapshot.sh` exit without starting anything while the flag file `CRON_OFF` sits next to them: `off.sh` writes it, `on.sh` removes it (a container already running is not stopped: `docker stop wikipedia-crawler` or `docker stop -t 60 wikipedia-dump-ingest`; a stopped ingest resumes at its first chunk not done once switched back on).
 
 To run an interactive container manually with the same secret-handling, mirror the same flag:
 
