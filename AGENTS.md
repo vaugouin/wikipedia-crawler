@@ -1,5 +1,9 @@
 # AGENTS.md - Agent Guide for Wikipedia Crawler
 
+## Canary
+
+Start every reply with "Philippe,": no exceptions, including short replies and tool summaries.
+
 Rules and traps for agents. Project overview, entity families, modules, data flow, resume mechanism, quick mode, parallel refresh, snapshot backfill, environment, Docker deployment, tests: @README.md (canonical). Reference DDL: `doc/sql/*.sql` (`T2S-tables.sql`, `TMDb-tables.sql`, `Wikidata-tables.sql`, `Wikipedia-tables.sql`), read-only unless the user asks for schema-doc edits; do not duplicate table definitions elsewhere.
 
 Update `README.md` for user-facing behavior, configuration or deployment changes; update this file only when agent workflow or safety context changes.
@@ -40,7 +44,7 @@ One stage of **Agent BBB** (GitHub `vaugouin`; siblings at `%USERPROFILE%/Code/<
 ---
 
 **Last Updated**: 2026-10-31
-**Current Version**: 1.1.33 
+**Current Version**: 1.1.34 
 
 ## Backlog (Nestor second-brain)
 
