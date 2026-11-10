@@ -88,6 +88,57 @@ CREATE TABLE `T_WC_WIKIPEDIA_PAGE_LANG_IMAGE` (
 /*!40101 SET character_set_client = @saved_cs_client */;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!40101 SET character_set_client = utf8 */;
+CREATE TABLE `T_WC_WIKIPEDIA_PAGE_LANG_LINK` (
+  `ID_WIKIDATA` varchar(50) NOT NULL,
+  `LANG` varchar(10) NOT NULL,
+  `ITEM_TYPE` varchar(20) DEFAULT NULL,
+  `SECTION_DISPLAY_ORDER` int(5) NOT NULL,
+  `DISPLAY_ORDER` int(5) NOT NULL,
+  `ANCHOR` varchar(500) DEFAULT NULL,
+  `TARGET_TITLE` varchar(300) NOT NULL,
+  `FRAGMENT` varchar(300) DEFAULT NULL,
+  `TARGET_FINAL_TITLE` varchar(300) DEFAULT NULL,
+  `VIA_REDIRECT` tinyint(1) DEFAULT 0,
+  `IS_REDLINK` tinyint(1) DEFAULT 0,
+  `IS_DATE` tinyint(1) DEFAULT 0,
+  `TARGET_ID_WIKIDATA` varchar(50) DEFAULT NULL,
+  `RESOLVED_BY` varchar(20) DEFAULT NULL,
+  `DELETED` int(5) DEFAULT NULL,
+  `ID_CREATOR` int(5) DEFAULT NULL,
+  `DAT_CREAT` date DEFAULT NULL,
+  `ID_OWNER` int(5) DEFAULT NULL,
+  `TIM_UPDATED` datetime DEFAULT NULL,
+  `ID_USER_UPDATED` int(5) DEFAULT NULL,
+  PRIMARY KEY (`ID_WIKIDATA`,`LANG`,`SECTION_DISPLAY_ORDER`,`DISPLAY_ORDER`),
+  KEY `TIM_UPDATED` (`TIM_UPDATED`),
+  KEY `TARGET_LANG_SOURCE` (`TARGET_ID_WIKIDATA`,`LANG`,`ID_WIKIDATA`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8 */;
+CREATE TABLE `T_WC_WIKIPEDIA_PAGE_LANG_REFERENCE` (
+  `ID_WIKIDATA` varchar(50) NOT NULL,
+  `LANG` varchar(10) NOT NULL,
+  `ITEM_TYPE` varchar(20) DEFAULT NULL,
+  `SECTION_DISPLAY_ORDER` int(5) NOT NULL,
+  `DISPLAY_ORDER` int(5) NOT NULL,
+  `NOTE_KEY` varchar(300) DEFAULT NULL,
+  `LABEL` varchar(50) DEFAULT NULL,
+  `URL` text DEFAULT NULL,
+  `TITLE` varchar(1000) DEFAULT NULL,
+  `REFERENCE_TEXT` mediumtext /*!100301 COMPRESSED*/ DEFAULT NULL,
+  `DELETED` int(5) DEFAULT NULL,
+  `ID_CREATOR` int(5) DEFAULT NULL,
+  `DAT_CREAT` date DEFAULT NULL,
+  `ID_OWNER` int(5) DEFAULT NULL,
+  `TIM_UPDATED` datetime DEFAULT NULL,
+  `ID_USER_UPDATED` int(5) DEFAULT NULL,
+  PRIMARY KEY (`ID_WIKIDATA`,`LANG`,`SECTION_DISPLAY_ORDER`,`DISPLAY_ORDER`),
+  KEY `TIM_UPDATED` (`TIM_UPDATED`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8 */;
 CREATE TABLE `T_WC_WIKIPEDIA_PAGE_LANG_SECTION` (
   `ID_ROW` int(11) NOT NULL AUTO_INCREMENT,
   `ID_WIKIDATA` varchar(50) NOT NULL,
@@ -116,56 +167,5 @@ CREATE TABLE `T_WC_WIKIPEDIA_PAGE_LANG_SECTION` (
   KEY `LANG` (`LANG`),
   KEY `TITLE` (`TITLE`),
   KEY `ITEM_TYPE` (`ITEM_TYPE`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-/*!40101 SET character_set_client = @saved_cs_client */;
-/*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!40101 SET character_set_client = utf8 */;
-CREATE TABLE `T_WC_WIKIPEDIA_PAGE_LANG_LINK` (
-  `ID_WIKIDATA` varchar(50) NOT NULL,
-  `LANG` varchar(10) NOT NULL,
-  `ITEM_TYPE` varchar(20) DEFAULT NULL,
-  `SECTION_DISPLAY_ORDER` int(5) NOT NULL,
-  `DISPLAY_ORDER` int(5) NOT NULL,
-  `ANCHOR` varchar(500) DEFAULT NULL,
-  `TARGET_TITLE` varchar(300) NOT NULL,
-  `FRAGMENT` varchar(300) DEFAULT NULL,
-  `TARGET_FINAL_TITLE` varchar(300) DEFAULT NULL,
-  `VIA_REDIRECT` tinyint(1) DEFAULT 0,
-  `IS_REDLINK` tinyint(1) DEFAULT 0,
-  `IS_DATE` tinyint(1) DEFAULT 0,
-  `TARGET_ID_WIKIDATA` varchar(50) DEFAULT NULL,
-  `RESOLVED_BY` varchar(20) DEFAULT NULL,
-  `DELETED` int(5) DEFAULT NULL,
-  `ID_CREATOR` int(5) DEFAULT NULL,
-  `DAT_CREAT` date DEFAULT NULL,
-  `ID_OWNER` int(5) DEFAULT NULL,
-  `TIM_UPDATED` datetime DEFAULT NULL,
-  `ID_USER_UPDATED` int(5) DEFAULT NULL,
-  PRIMARY KEY (`ID_WIKIDATA`,`LANG`,`SECTION_DISPLAY_ORDER`,`DISPLAY_ORDER`),
-  KEY `TARGET_LANG_SOURCE` (`TARGET_ID_WIKIDATA`,`LANG`,`ID_WIKIDATA`),
-  KEY `TIM_UPDATED` (`TIM_UPDATED`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-/*!40101 SET character_set_client = @saved_cs_client */;
-/*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!40101 SET character_set_client = utf8 */;
-CREATE TABLE `T_WC_WIKIPEDIA_PAGE_LANG_REFERENCE` (
-  `ID_WIKIDATA` varchar(50) NOT NULL,
-  `LANG` varchar(10) NOT NULL,
-  `ITEM_TYPE` varchar(20) DEFAULT NULL,
-  `SECTION_DISPLAY_ORDER` int(5) NOT NULL,
-  `DISPLAY_ORDER` int(5) NOT NULL,
-  `NOTE_KEY` varchar(300) DEFAULT NULL,
-  `LABEL` varchar(50) DEFAULT NULL,
-  `URL` text DEFAULT NULL,
-  `TITLE` varchar(1000) DEFAULT NULL,
-  `REFERENCE_TEXT` mediumtext /*!100301 COMPRESSED*/ DEFAULT NULL,
-  `DELETED` int(5) DEFAULT NULL,
-  `ID_CREATOR` int(5) DEFAULT NULL,
-  `DAT_CREAT` date DEFAULT NULL,
-  `ID_OWNER` int(5) DEFAULT NULL,
-  `TIM_UPDATED` datetime DEFAULT NULL,
-  `ID_USER_UPDATED` int(5) DEFAULT NULL,
-  PRIMARY KEY (`ID_WIKIDATA`,`LANG`,`SECTION_DISPLAY_ORDER`,`DISPLAY_ORDER`),
-  KEY `TIM_UPDATED` (`TIM_UPDATED`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
