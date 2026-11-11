@@ -14,7 +14,7 @@ Update `README.md` for user-facing behavior, configuration or deployment changes
 
 One stage of **Agent BBB** (GitHub `vaugouin`; siblings at `%USERPROFILE%/Code/<repo>` and `github.com/vaugouin/<repo>`, converging on a shared MariaDB with `T_WC_*` tables). Canonical roster and stage map: `%USERPROFILE%/Nestor/projets/t2s-backlog/topics/related-repositories.txt`.
 
-**This repository's role:** acquisition. Fetches English and French Wikipedia article sections for Wikidata-linked movies, series, persons, items and the T2S entity families into `T_WC_WIKIPEDIA_*`, and extracts French «Fiche technique» film-format metadata. Consumed by `tmdb-movie-preprocess` and the Wikipedia sections of `tmdb-front`. It also writes the image columns of the V1 Wikidata tables (`WIKIPEDIA_*_PATH`).
+**This repository's role:** acquisition. Fetches English and French Wikipedia article sections for Wikidata-linked movies, series, persons, items and the T2S entity families into `T_WC_WIKIPEDIA_*`, and extracts French «Fiche technique» film-format metadata. Consumed by `tmdb-movie-preprocess` and the Wikipedia sections of the web front `t2s-front` (formerly `tmdb-front`). It also writes the image columns of the V1 Wikidata tables (`WIKIPEDIA_*_PATH`).
 
 **Adding an entity family** (last done for `sourcework`, process 224, WIKIPEDIA-CRAWLER-023) touches four places that must stay in sync: a `build_<family>_sql` in `wikipedia_queries.py` plus its `CONTENT_SQL_BUILDERS` key, a `CONTENT_CONFIG` entry in `wikipedia_page_writer.py` (same process id, image table/column, source table/id column), the import, resume server variable and `arrprocesses` entry in `wikipedia_crawler.py` (next free id, 2xx; appended last so the exclusion chain of earlier families is unchanged), and `arrquickprocessids`. A row filter the family applies to its own source table goes in `CONTENT_SOURCE_FILTERS` so `--no-exclusions` keeps it. Then update the README lists (entities table, process order, resume variables, quick-mode table). The lead image needs no downstream wiring: process 71 of `tmdb-movie-preprocess` copies `T_WC_WIKIPEDIA_PAGE_LANG.MAIN_IMAGE_URL` into the T2S tables it lists.
 
@@ -44,7 +44,7 @@ One stage of **Agent BBB** (GitHub `vaugouin`; siblings at `%USERPROFILE%/Code/<
 ---
 
 **Last Updated**: 2026-11-01
-**Current Version**: 1.1.35 
+**Current Version**: 1.1.36 
 
 ## Backlog (Nestor second-brain)
 
