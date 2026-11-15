@@ -4,7 +4,8 @@
 # (wikipedia_dump_ingest.py, WIKIPEDIA-CRAWLER-024). Same image and env file as the
 # crawler, its own container name, so it can run beside wikipedia-crawler-manual.
 # Without --write it is a dry run: it reads the database and writes nothing to it.
-# Stop the main crawler before a --write run: both would upsert the same rows.
+# The live crawl (wikipedia-crawler.sh) is disabled since 1.1.37; if a wikipedia-crawler
+# container still runs, stop it before a --write run: both would upsert the same rows.
 #
 # Usage (the report also lands in dumpdata/, ignored by git):
 #   ./wikipedia-dump-ingest.sh --lang fr --chunks 0

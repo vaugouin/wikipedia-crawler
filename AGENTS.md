@@ -37,14 +37,16 @@ One stage of **Agent BBB** (GitHub `vaugouin`; siblings at `%USERPROFILE%/Code/<
 ## Snapshot ingest: safety rules
 
 `wikipedia_dump_ingest.py` / `run-if-new-snapshot.sh` (WIKIPEDIA-CRAWLER-024/025/026) are described in README § "Backfill from the Wikimedia Enterprise snapshots". Rules:
-- While `dumpdata/INGEST_IN_PROGRESS` exists or the `wikipedia-dump-ingest` container runs, `wikipedia-crawler.sh` does not start the crawler (both write the same rows). **Never delete the flag by hand during a run.**
+- **The continuous live crawl is disabled (1.1.37, 2026-11-15).** `wikipedia-crawler.sh` starts nothing and exits 0: it cost too much on the VPS and on the Wikimedia infrastructure. The only scheduled Wikipedia process is `run-if-new-snapshot.sh` (cron, daily check), which starts `wikipedia_dump_ingest.py --auto` when a monthly snapshot is out. Do not re-enable the live crawl, nor add a new scheduled job that calls the Wikipedia APIs, without Philippe's explicit request. `wikipedia-crawler-manual.sh` stays for on-demand refreshes of one Qid or one family.
+- What the snapshot ingest does not do, now that nothing else does it: images (`MAIN_IMAGE_URL`, the `WIKIPEDIA_*_PATH` columns, image lists) are left as they are.
+- **Never delete `dumpdata/INGEST_IN_PROGRESS` by hand during a run.**
 - Each chunk runs in a forked child (1.1.11, after an OOM kill at 21 GB). Test changes to the chunk loop under Linux: Windows has no fork and runs chunks inline.
 - **Never remove the disk guard** (`WME_INGEST_MIN_FREE_GB`, default 40): a full snapshot grows the database by tens of GB on the same filesystem, and on 2026-10-20 it filled the VPS disk and crashed MariaDB. Measure with `doc/sql/check-table-sizes.sql` before and after a batch.
 
 ---
 
-**Last Updated**: 2026-11-01
-**Current Version**: 1.1.36 
+**Last Updated**: 2026-11-15
+**Current Version**: 1.1.37 
 
 ## Backlog (Nestor second-brain)
 

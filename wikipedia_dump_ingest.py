@@ -465,8 +465,8 @@ def main():
         print(f"targets: {len(targets)} Qids")
         complete = run_auto(args, wme, targets, ctx)
         if complete and os.path.exists(INGEST_FLAG):
-            os.remove(INGEST_FLAG)            # lets wikipedia-crawler.sh start the crawler again
-            print(f"{INGEST_FLAG} removed: the crawler may start again")
+            os.remove(INGEST_FLAG)            # marks the ingest as finished (the live crawl is disabled since 1.1.37)
+            print(f"{INGEST_FLAG} removed: ingest finished")
         print(f"--auto finished ({time.time() - started:.0f}s): {'complete' if complete else 'incomplete'}")
         sys.exit(0 if complete else 1)
 

@@ -1,5 +1,7 @@
 # wikipedia-crawler
 
+> **Since 1.1.37 (2026-11-15) the continuous live crawl is disabled.** `wikipedia-crawler.sh` starts nothing: running `wikipedia_crawler.py` around the clock cost too much on the VPS and on the Wikimedia infrastructure. Wikipedia content now comes only from the monthly Wikimedia Enterprise snapshots, ingested by `run-if-new-snapshot.sh` and `wikipedia-dump-ingest.sh` (see [Backfill from the Wikimedia Enterprise snapshots](#backfill-from-the-wikimedia-enterprise-snapshots-prototype-116)). The snapshot ingest leaves images untouched. `wikipedia-crawler-manual.sh` remains for on-demand refreshes. The sections below on the live crawl describe code that is kept but no longer scheduled.
+
 `wikipedia_crawler.py` is a batch enrichment script that reads Wikidata-linked entities from the database, retrieves their English and French Wikipedia pages, extracts structured section content, and stores both the textual content and selected Wikipedia image URLs back into MySQL.
 
 ## Entities crawled
@@ -674,7 +676,7 @@ Since 1.1.11 each chunk runs in its own forked process, which gives its memory b
 
 **Disk guard (1.1.15).** Before each chunk, `--auto` and `--write` runs check the free space of the filesystem that holds this directory, which is also the database's on the VPS. Below `WME_INGEST_MIN_FREE_GB` (default 40) no new chunk starts: the run ends as incomplete, the status reads `stopped by the disk guard`, and the next check resumes at the first chunk not done. The chunks themselves are streamed and never stored; what grows is the database. On 2026-10-19/20 the ingest of 515 chunks wrote about 70 GB of Wikipedia tables and pushed the InnoDB undo files to 42 GB, the disk filled up at enwiki chunk 365 and MariaDB crashed with a corrupted page. Measured on enwiki chunks 365 to 370 (`doc/sql/check-table-sizes-20261020.txt` for the baseline): about 0.16 GB of tables and 400 s per chunk. The undo growth was not the ingest's own doing: an idle read transaction held by the API since its startup blocked the InnoDB purge (FASTAPI-TEXT2SQL-336); once it was killed, the undo files went back to 10 MB and about 43 GB came back. The default of 40 GB is kept as the final threshold (2026-10-21, WIKIPEDIA-CRAWLER-026): at 0.16 GB a chunk, a full enwiki snapshot written from scratch costs about 70 GB, so the guard leaves room for a day of the other writers and for a secondary-index build, not for a full rebuild of the link table (about as much free disk as the table itself, to plan on its own). Two indexes of `T_WC_WIKIPEDIA_PAGE_LANG_LINK` that no query reads, `LANG_TARGET_TITLE` and `ITEM_TYPE`, are dropped by `doc/sql/archive/alter-link-drop-unused-indexes-026.sql` (1.1.17).
 
-A chunk in error is retried once at the end of its language. A run that dies resumes at the next daily check with the chunks not done, and the crawler stays stopped meanwhile. When every language is whole, `--auto` deletes `dumpdata/INGEST_IN_PROGRESS` and the crawler's own cron starts the crawler again: `wikipedia-crawler.sh` refuses to start it while the flag exists or a `wikipedia-dump-ingest` container runs.
+A chunk in error is retried once at the end of its language. A run that dies resumes at the next daily check with the chunks not done. When every language is whole, `--auto` deletes `dumpdata/INGEST_IN_PROGRESS`. Since 1.1.37 this is the only scheduled Wikipedia process: the live crawl (`wikipedia-crawler.sh`) is disabled.
 
 `--check` calls the Enterprise API only when a language's last whole snapshot is older than the current month: snapshots come out on the 1st, so the API is asked a few times a month at most. Snapshots ingested by hand-run batches are recorded with `./wikipedia-dump-ingest.sh --mark-complete fr`. The title maps keep one file per chunk name, so a new snapshot overwrites the previous month's.
 
@@ -739,7 +741,7 @@ Secrets must never be baked into the Docker image. The project follows these rul
 - The [Dockerfile](Dockerfile) never `COPY`s `.env` and never sets secrets via `ENV` lines. Only non-sensitive defaults belong in the image.
 - At runtime, secrets are injected from a host-managed env file that lives **outside** the application source tree, using Docker's `--env-file` option in `docker run`. The convention is `/home/debian/docker/wikipedia-crawler/.env` on the deployment host.
 
-The startup script [wikipedia-crawler.sh](wikipedia-crawler.sh) already wires this up:
+The former startup script [wikipedia-crawler.sh](wikipedia-crawler.sh) (disabled since 1.1.37, it now exits at once) wired this up; `run-if-new-snapshot.sh` and `wikipedia-dump-ingest.sh` follow the same rule:
 
 ```bash
 docker run -d --rm --network="host" \
@@ -748,7 +750,7 @@ docker run -d --rm --network="host" \
   --name wikipedia-crawler wikipedia-crawler-python-app
 ```
 
-`wikipedia-crawler.sh` and, since 1.1.35, `run-if-new-snapshot.sh` exit without starting anything while the flag file `CRON_OFF` sits next to them: `off.sh` writes it, `on.sh` removes it (a container already running is not stopped: `docker stop wikipedia-crawler` or `docker stop -t 60 wikipedia-dump-ingest`; a stopped ingest resumes at its first chunk not done once switched back on).
+Since 1.1.35, `run-if-new-snapshot.sh` exits without starting anything while the flag file `CRON_OFF` sits next to it: `off.sh` writes it, `on.sh` removes it (a container already running is not stopped: `docker stop -t 60 wikipedia-dump-ingest`; a stopped ingest resumes at its first chunk not done once switched back on). `wikipedia-crawler.sh` is disabled whatever the flag.
 
 To run an interactive container manually with the same secret-handling, mirror the same flag:
 

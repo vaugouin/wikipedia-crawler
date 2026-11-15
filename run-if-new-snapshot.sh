@@ -7,8 +7,7 @@
 #
 # WHAT IT DOES, in this order:
 #   0. exits at once while the flag file CRON_OFF sits next to it (off.sh / off-all.sh write
-#      it, on.sh removes it): the same switch as wikipedia-crawler.sh, so one off.sh silences
-#      both the crawler and the snapshot ingest. A container already running is not stopped;
+#      it, on.sh removes it). A container already running is not stopped;
 #   1. a flock: one execution at a time;
 #   2. if the wikipedia-dump-ingest container runs, exit at once;
 #   3. asks `wikipedia_dump_ingest.py --check` in a throwaway container:
@@ -16,15 +15,17 @@
 #        2 = cannot tell (Enterprise or database unreachable);
 #      --check reads the state from T_WC_SERVER_VARIABLE and calls the Enterprise API
 #      only from the 1st of the month until the new snapshot is in;
-#   4. on 0: writes dumpdata/INGEST_IN_PROGRESS, stops the wikipedia-crawler container
-#      (wikipedia-crawler.sh refuses to start it while the flag is there), and starts
+#   4. on 0: writes dumpdata/INGEST_IN_PROGRESS, stops a wikipedia-crawler container if one
+#      still runs (the live crawl is disabled since 1.1.37; the stop is kept as a guard), and starts
 #      `wikipedia_dump_ingest.py --auto` DETACHED (docker run -d): no nohup, no terminal.
 #
 # --auto ingests every language whose snapshot is not in yet, chunk by chunk, one forked
 # process per chunk, and records each chunk done in T_WC_SERVER_VARIABLE. When every
-# language is whole it deletes dumpdata/INGEST_IN_PROGRESS itself, and the crawler's own
-# cron starts the crawler again. If it dies, the flag stays, the crawler stays stopped,
-# and the next check resumes at the first chunk not done.
+# language is whole it deletes dumpdata/INGEST_IN_PROGRESS itself. If it dies, the flag
+# stays and the next check resumes at the first chunk not done.
+#
+# Since 1.1.37 this is the ONLY scheduled Wikipedia process: wikipedia-crawler.sh (the
+# continuous live crawl) is disabled, it cost too much on the VPS and on Wikimedia.
 #
 # On 1 with the flag still there (an --auto run finished whole but could not delete it),
 # the flag is removed here.
@@ -57,7 +58,7 @@ LOCK=/tmp/run-if-new-snapshot.lock
 DRY_RUN=0
 [ "${1:-}" = "--dry-run" ] && DRY_RUN=1
 
-# Switched off by off.sh (or off-all.sh), back on with on.sh: same flag as wikipedia-crawler.sh.
+# Switched off by off.sh (or off-all.sh), back on with on.sh.
 if [ -f "$STACK/CRON_OFF" ]; then
   echo "$(date -u '+%Y-%m-%d %H:%M:%S UTC'): CRON_OFF present ($(cat "$STACK/CRON_OFF" 2>/dev/null)): snapshot ingest switched off (bash on.sh to switch it back on)."
   exit 0

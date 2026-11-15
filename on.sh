@@ -1,5 +1,6 @@
 #!/bin/bash
-# Switch wikipedia-crawler.sh back on: removes the flag file CRON_OFF that off.sh wrote.
+# Switch run-if-new-snapshot.sh back on: removes the flag file CRON_OFF that off.sh wrote.
+# (wikipedia-crawler.sh is disabled since 1.1.37 and stays so whatever the flag.)
 cd "$(dirname "$(readlink -f "$0")")" || exit 1
 # A launcher renamed by the old off.sh (<name>-off.sh, before 2026-10-25) is put back,
 # or dropped when git has already restored the tracked one.
