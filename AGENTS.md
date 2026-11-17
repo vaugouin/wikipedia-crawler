@@ -12,7 +12,7 @@ Update `README.md` for user-facing behavior, configuration or deployment changes
 
 ## Related repositories (project ecosystem)
 
-One stage of **Agent BBB** (GitHub `vaugouin`; siblings at `%USERPROFILE%/Code/<repo>` and `github.com/vaugouin/<repo>`, converging on a shared MariaDB with `T_WC_*` tables). Canonical roster and stage map: `%USERPROFILE%/Nestor/projets/t2s-backlog/topics/related-repositories.txt`.
+One stage of **Cinephile App** (GitHub `vaugouin`; siblings at `%USERPROFILE%/Code/<repo>` and `github.com/vaugouin/<repo>`, converging on a shared MariaDB with `T_WC_*` tables). Canonical roster and stage map: `%USERPROFILE%/Nestor/projets/t2s-backlog/topics/related-repositories.txt`.
 
 **This repository's role:** acquisition. Fetches English and French Wikipedia article sections for Wikidata-linked movies, series, persons, items and the T2S entity families into `T_WC_WIKIPEDIA_*`, and extracts French «Fiche technique» film-format metadata. Consumed by `tmdb-movie-preprocess` and the Wikipedia sections of the web front `t2s-front` (formerly `tmdb-front`). It also writes the image columns of the V1 Wikidata tables (`WIKIPEDIA_*_PATH`).
 
